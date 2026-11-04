@@ -91,6 +91,16 @@ contextBridge.exposeInMainWorld("vcallDesktop", {
       return () => ipcRenderer.removeListener("vcall:atualizacao", ouvir);
     },
   },
+  /**
+   * O kanban de um GitHub Project no Planning Poker (desktop/github.js):
+   * estado, conectar, sair, projeto, cards, estimar. O token fica no processo
+   * principal; daqui só saem pedidos fechados.
+   */
+  github: async (acao, dados) => {
+    const r = await ipcRenderer.invoke("vcall:github", { acao: String(acao), dados });
+    if (r?.erro) throw new Error(r.erro);
+    return r?.valor;
+  },
   /** Diz qual fonte a próxima captura deve usar, e se leva o som do sistema. */
   escolherFonte: (id, audio) => ipcRenderer.invoke("vcall:escolher", { id: String(id || ""), audio: !!audio }),
 });

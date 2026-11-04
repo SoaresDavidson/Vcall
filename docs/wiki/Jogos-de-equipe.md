@@ -44,6 +44,31 @@ revelados, notas e a ordem da Daily.
 Passe o mouse sobre alguém na mesa e jogue um emoji 👏🎉😂🤔☕🔥: ele voa do
 seu lugar até o da pessoa.
 
+### Histórias do GitHub Projects
+
+No app de mesa, o botão **GitHub** embaixo da lista de histórias traz as US
+direto do quadro (kanban) de um GitHub Project:
+
+1. **Conectar**: gere um token clássico no GitHub (o botão **Abrir o GitHub**
+   já abre a página com os escopos `project`, `repo` e `read:org` marcados) e
+   cole no Vcall. O token fica cifrado no computador e só o seu Vcall usa, nas
+   salas abertas por ele. **Sair** apaga o token.
+2. **Projeto**: aparecem os seus projetos e os das suas organizações, o último
+   usado primeiro. Dá também para colar o endereço
+   (`github.com/orgs/empresa/projects/3`).
+3. **US**: escolha a coluna (com quantos cards tem em cada uma) e marque as US.
+   Vêm marcadas as que ainda não têm estimativa; as que já estão na mesa não
+   entram de novo. Cada linha mostra quantas subtarefas já foram fechadas.
+
+Na mesa, a US em votação mostra o link para o card e três abas: **Subtarefas**
+(as sub-issues, com o que já foi fechado), a **checklist** do corpo da issue
+(com o nome do título de cima, em geral "Critérios de aceite") e a
+**Descrição**. Cada pessoa abre e fecha as abas para si.
+
+Ao salvar a estimativa, o número vai para o campo escolhido no projeto (um
+campo de número, como *Estimate*), não importa quem salvou: quem importou é
+que grava, pelo computador dele.
+
 ## Retrospectiva
 
 Três fases, sempre iguais para todo mundo. Qualquer pessoa pode passar de uma

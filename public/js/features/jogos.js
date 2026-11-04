@@ -323,12 +323,72 @@ export function historiaAtual(estado) {
   return estado.ler("p/atual", "_") || "_";
 }
 
+/**
+ * O card do GitHub de onde a história veio (features/github.js). Chega de
+ * outro participante: o link só passa se for mesmo do github.com.
+ */
+function cardGithub(gh) {
+  if (!gh || typeof gh.item !== "string") return null;
+  return {
+    item: gh.item.slice(0, 100),
+    numero: Number.isSafeInteger(gh.numero) ? gh.numero : null,
+    url: linkGithub(gh.url),
+  };
+}
+
+const linkGithub = (u) => (typeof u === "string" && /^https:\/\/github\.com\/[^\s]+$/.test(u) ? u : null);
+const txt = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+
+/*
+ * O que vem junto com uma história do kanban: descrição, checklist (os
+ * critérios de aceite) e subtarefas. Cada parte numa chave própria, porque
+ * um valor do estado tem até ~4 kB (valorOk): `p/hd/<id>` e `p/hs/<id>`.
+ */
+const LIMITE_DETALHE = 3900;
+const tamanho = (v) => JSON.stringify(v).length;
+
+function pacoteDetalhes(id, x) {
+  const pares = [];
+  const itensCheck = (x.criterios?.itens || []).slice(0, 20).map((c) => ({ t: String(c.titulo).slice(0, 220), f: !!c.feito }));
+  if (x.descricao || itensCheck.length) {
+    const d = { t: String(x.descricao || "").slice(0, 1600), cn: String(x.criterios?.nome || "").slice(0, 60), c: itensCheck };
+    while (d.c.length > 3 && tamanho(d) > LIMITE_DETALHE) d.c.pop();
+    while (d.t && tamanho(d) > LIMITE_DETALHE) d.t = `${d.t.slice(0, Math.floor(d.t.length * 0.85))}…`;
+    while (tamanho(d) > LIMITE_DETALHE) d.c.pop();
+    d.cm = (x.criterios?.itens?.length || 0) - d.c.length;
+    pares.push([`p/hd/${id}`, d]);
+  }
+  if (x.subtarefas?.length) {
+    const s = { s: x.subtarefas.slice(0, 30).map((t) => ({ t: String(t.titulo).slice(0, 160), n: Number.isSafeInteger(t.numero) ? t.numero : null, u: linkGithub(t.url), f: !!t.feita })) };
+    while (tamanho(s) > LIMITE_DETALHE) s.s.pop();
+    s.m = Math.max(x.subtarefasTotal || 0, x.subtarefas.length) - s.s.length;
+    pares.push([`p/hs/${id}`, s]);
+  }
+  return pares;
+}
+
+/** Descrição, checklist e subtarefas de uma história (vêm de outro participante: tudo conferido). */
+export function detalhesHistoria(estado, hid) {
+  const d = estado.ler(`p/hd/${hid}`) || {};
+  const s = estado.ler(`p/hs/${hid}`) || {};
+  const lista = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : []);
+  const subtarefas = lista(s.s).map((x) => ({ titulo: txt(x.t, 160), numero: Number.isSafeInteger(x.n) ? x.n : null, url: linkGithub(x.u), feita: x.f === true }));
+  const criterios = lista(d.c).map((x) => ({ titulo: txt(x.t, 220), feito: x.f === true }));
+  const mais = (v) => (Number.isSafeInteger(v) && v > 0 ? v : 0);
+  return {
+    descricao: txt(d.t, 1700),
+    criterios: { nome: txt(d.cn, 60) || "Checklist", itens: criterios, mais: mais(d.cm) },
+    subtarefas: { itens: subtarefas, mais: mais(s.m), feitas: subtarefas.filter((x) => x.feita).length },
+    vazio: !d.t && !criterios.length && !subtarefas.length,
+  };
+}
+
 /** Histórias, na ordem. */
 export function historias(estado) {
   const lista = [];
   for (const [k, h] of estado.com("p/h/")) {
     if (h?.apagada) continue;
-    lista.push({ id: k.slice(4), titulo: String(h.titulo || "").slice(0, 200), ordem: Number(h.ordem) || 0, estimativa: h.estimativa ?? null });
+    lista.push({ id: k.slice(4), titulo: String(h.titulo || "").slice(0, 200), ordem: Number(h.ordem) || 0, estimativa: h.estimativa ?? null, gh: cardGithub(h.gh) });
   }
   return lista.sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
 }
@@ -445,19 +505,26 @@ export class Poker {
     }
   }
 
+  /**
+   * `titulos`: textos, ou objetos vindos do kanban do GitHub (features/github.js):
+   * `{ titulo, estimativa, gh, descricao, criterios, subtarefas, subtarefasTotal }`.
+   */
   adicionarHistorias(titulos) {
     const atuais = historias(this.estado);
     let ordem = atuais.length ? Math.max(...atuais.map((h) => h.ordem)) + 1 : 1;
     const pares = [];
     let primeira = null;
-    for (const t of titulos.map((x) => String(x).trim()).filter(Boolean).slice(0, 50)) {
+    const novas = titulos.map((x) => (typeof x === "object" && x ? x : { titulo: x })).filter((x) => String(x.titulo ?? "").trim());
+    for (const x of novas.slice(0, 50)) {
       const id = novoId();
-      primeira ||= id;
-      pares.push([`p/h/${id}`, { titulo: t.slice(0, 200), ordem: ordem++, estimativa: null }]);
+      const estimativa = x.estimativa ?? null;
+      if (estimativa == null) primeira ||= id;
+      pares.push([`p/h/${id}`, { titulo: String(x.titulo).trim().slice(0, 200), ordem: ordem++, estimativa, ...(x.gh ? { gh: x.gh } : {}) }], ...pacoteDetalhes(id, x));
     }
     // Sem história em votação: a primeira nova vira a atual.
     if (primeira && historiaAtual(this.estado) === "_") pares.push(["p/atual", primeira]);
-    this.estado.definir(pares);
+    // Em pedaços que cabem no canal: com descrições, 50 histórias passam de 100 kB.
+    for (const pedaco of pedacosDoEstado(pares)) this.estado.definir(pedaco);
     return primeira;
   }
 

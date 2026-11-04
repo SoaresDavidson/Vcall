@@ -159,6 +159,7 @@
 }
 .jogos__rodape {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   margin-top: auto;
   padding-top: var(--sp-2);
@@ -273,6 +274,450 @@
 }
 .poker__historiaTxt strong {
   font-size: var(--text-lg);
+}
+.poker__card {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.poker__card:hover {
+  color: var(--text);
+}
+
+/* Detalhes da US do GitHub: subtarefas, critérios e descrição em abas. */
+.poker__detalhes {
+  position: relative;
+  width: min(560px, 100%);
+  margin: var(--sp-2) auto 0;
+  text-align: left;
+}
+.poker__abas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-1);
+}
+.poker__aba {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.poker__aba:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.poker__aba[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.poker__abaConta {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.poker__aba[aria-selected="true"] .poker__abaConta {
+  color: inherit;
+}
+.poker__painel {
+  position: absolute;
+  inset: calc(100% + var(--sp-2)) 0 auto;
+  z-index: 5;
+  max-height: min(300px, 46vh);
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+.poker__painel[hidden] {
+  display: none;
+}
+.poker__check {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+}
+.poker__check li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+}
+.poker__check .icon {
+  flex: none;
+  align-self: center;
+  color: var(--text-muted);
+}
+.poker__check .is-feito {
+  color: var(--text-muted);
+}
+.poker__check .is-feito .icon {
+  color: var(--ok);
+}
+.poker__num {
+  flex: none;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.poker__num:hover {
+  color: var(--accent);
+}
+.poker__mais {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.poker__desc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+/* ---- Histórias do GitHub (ui/github.js) ---- */
+
+.gh__passos,
+.gh__lista,
+.gh__cards,
+.poker__check {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.modal.gh {
+  max-width: min(640px, calc(100vw - var(--sp-8)));
+}
+.gh .modal__head {
+  gap: var(--sp-3);
+}
+.gh__conta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.gh__quem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.gh__inicial {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+.gh__sair {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-sm);
+}
+.gh__corpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-6);
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+}
+.gh__erro:empty {
+  display: none;
+}
+.gh__erro {
+  margin: 0 var(--sp-6) var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+.gh__pe:empty {
+  display: none;
+}
+.gh__pe {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+}
+.gh__carregando {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 160px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* 1. Conectar */
+.gh__intro {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: flex-start;
+}
+.gh__selo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.gh__titulo {
+  font-size: var(--text-lg);
+  margin-bottom: var(--sp-1);
+}
+.gh__intro .muted {
+  font-size: var(--text-sm);
+}
+.gh__passos {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.gh__passos li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+.gh__passos li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+.gh__n {
+  display: grid;
+  place-items: center;
+  flex: none;
+  align-self: flex-start;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.gh__passo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+}
+.gh__passo .muted {
+  font-size: var(--text-xs);
+}
+.gh__fino {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* 2. Projetos */
+.gh__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.gh__projeto {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3);
+  border-radius: var(--radius-md);
+  text-align: left;
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.gh__projeto:hover,
+.gh__projeto:focus-visible {
+  background: var(--surface-2);
+}
+.gh__projIco {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+.gh__projTxt {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+}
+.gh__projTxt strong {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+.gh__vazio {
+  padding: var(--sp-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.gh__outro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 3. US da coluna */
+.gh__topo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.gh__voltar {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  margin-left: calc(-1 * var(--sp-2));
+}
+.gh__colunas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.gh__aba {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.gh__aba:hover {
+  border-color: var(--border-strong);
+}
+.gh__aba[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.gh__qtd {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.gh__todas {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  font-size: var(--text-sm);
+}
+.gh__todas .muted {
+  font-size: var(--text-xs);
+}
+.gh__cards {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin-top: calc(-1 * var(--sp-2));
+}
+.gh__cards li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+.gh__card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.gh__card:hover {
+  background: var(--surface-2);
+}
+.gh__card.is-mesa {
+  cursor: default;
+  color: var(--text-muted);
+}
+.gh__card input,
+.gh__todas input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.gh__num {
+  flex: none;
+  min-width: 3ch;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.gh__cardTit {
+  flex: 1;
+  min-width: 0;
+}
+.gh__chips {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
+}
+.gh__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--sp-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.gh__chip--est {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+.gh__destino {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+.gh__destino .muted {
+  font-size: var(--text-xs);
+}
+.gh__campo {
+  min-height: 40px;
 }
 .poker__fila {
   display: flex;

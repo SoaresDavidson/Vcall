@@ -36,7 +36,8 @@ import { Acordo, limpar, quadrosPara, tokensPara, wer } from "../public/js/featu
 import { Codigo, Desenho, DuasVerdades, Mimica, QuemSouEu, Quiz, Roda, Stop as StopJogo, valida } from "../public/js/features/festa.js";
 import { BOT, Forca, Lig4, Memoria, Sorteios, Velha, resultadoLig4, resultadoVelha } from "../public/js/features/tabuleiro.js";
 import { Chuva, Combo, ComboRemoto, DO_ANTIGO, REACOES, SINAIS, Sinais, validar as validarReacao } from "../public/js/features/reacoes.js";
-import { BARALHOS, Daily, EstadoJogos, Poker, Retro, compacto, daily, historias, mesaPoker, resultado, retro } from "../public/js/features/jogos.js";
+import { BARALHOS, Daily, EstadoJogos, Poker, Retro, compacto, daily, detalhesHistoria, historias, mesaPoker, resultado, retro } from "../public/js/features/jogos.js";
+import { KanbanGithub } from "../public/js/features/github.js";
 import { LinkTailscale, MENSAGENS, escolherPorta, interpretarFalha, lerEstado, urlDe } from "../desktop/tailscale.js";
 import { ehDaRede, ehIpTailscale } from "../src/rede.js";
 import { RoomRegistry, Participant } from "../src/rooms.js";
@@ -655,8 +656,10 @@ server.close();
   assert.equal(modoDeReabrir({ temExecve: false }), "reabrir");
   const main = (await import("node:fs")).readFileSync(new URL("../desktop/main.js", import.meta.url), "utf8");
   assert.ok(/modoDeReabrir\(\) === "execve"[\s\S]{0,80}process\.execve\(process\.execPath/.test(main), "o main.js usa o execve antes de qualquer janela");
-  // Sobreposição: dois pedidos seguidos ao abrir; o segundo se perdia.
-  assert.ok(/once\("ready-to-show"[\s\S]{0,120}send\("vcall:canto", cantoSobreposicao\)/.test(main), "a sobreposição recebe o canto atual ao aparecer");
+  // Sobreposição: dois pedidos seguidos ao abrir; o segundo se perdia. E o
+  // canto vai no did-finish-load: no ready-to-show o módulo da página ainda
+  // não ouvia, e a janela ficava no canto padrão.
+  assert.ok(/once\("did-finish-load"[\s\S]{0,120}send\("vcall:canto", cantoSobreposicao\)/.test(main), "a sobreposição recebe o canto atual depois que a página carrega");
   // O WebRTCPipeWireCapturer saiu no M133; e o Chromium só lê um enable-features.
   assert.ok(!/appendSwitch\("enable-features", "WebRTCPipeWireCapturer"\)/.test(main), "sem a opção morta do PipeWire");
   assert.ok((main.match(/appendSwitch\("enable-features"/g) || []).length <= 1, "no máximo um enable-features (o Chromium só lê um)");
@@ -835,6 +838,65 @@ server.close();
   assert.equal(resultado(["3", "5", "?"]).validos, 2);
   assert.equal(resultado(["M", "G", "M"], BARALHOS.camisetas).maioria, "M");
   assert.equal(resultado(["½", "1"], BARALHOS.modificado).media, 0.8);
+
+  // Kanban do GitHub: as US marcadas entram uma vez só, com descrição, critérios e subtarefas, e cada estimativa vai para o card uma vez, pelo computador de quem importou.
+  {
+    const gravados = [];
+    const cards = [
+      { item: "PVTI_1", titulo: "US12 — Pagar com Pix", numero: 12, url: "https://github.com/acme/app/issues/12", coluna: "c1", estimativa: null, subs: { total: 2, feitas: 1 } },
+      { item: "PVTI_2", titulo: "Exportar PDF", numero: 13, url: "https://github.com/acme/app/issues/13", coluna: "c1", estimativa: 3, subs: null },
+    ];
+    const longo = "x".repeat(300);
+    const detalhes = {
+      PVTI_1: {
+        corpo: "**Descrição**\nComo cliente, quero pagar com Pix.\n\n**Critérios de aceite**\n- [ ] QR na tela\n- [x] Confirma em [10 s](https://x.y)\n",
+        subs: [
+          { titulo: "[US12] Criar cobrança", numero: 40, url: "https://github.com/acme/app/issues/40", feita: true },
+          { titulo: "Tela do QR", numero: 41, url: "javascript:alert(1)", feita: false },
+        ],
+        subsTotal: 2,
+      },
+      // Muita coisa: tem de caber no limite de um valor do estado em vez de a história sumir.
+      PVTI_2: { corpo: `${longo}\n${Array.from({ length: 20 }, (_, i) => `- [ ] critério ${i} ${longo}`).join("\n")}`, subs: Array.from({ length: 30 }, (_, i) => ({ titulo: `sub ${i} ${longo}`, numero: 100 + i, url: `https://github.com/acme/app/issues/${100 + i}`, feita: false })), subsTotal: 45 },
+    };
+    const ponte = async (acao, d) => (acao === "cards" ? cards : acao === "detalhes" ? Object.fromEntries(d.itens.map((i) => [i, detalhes[i]])) : (gravados.push(d), true));
+    const kg = new KanbanGithub(nos[0], pk[0], ponte);
+    const projeto = { id: "PVT_x", status: { nome: "Status", colunas: [{ id: "c1", nome: "Todo" }] }, numeros: [{ id: "F_est", nome: "Estimativa" }] };
+    const r = await kg.importar(projeto, cards, { campo: projeto.numeros[0] });
+    assert.deepEqual([r.novos, r.faltam], [2, 0]);
+    entregar();
+    assert.equal((await kg.importar(projeto, cards, { campo: projeto.numeros[0] })).novos, 0, "importar de novo não repete cards");
+    const doGh = historias(nos[2]).filter((h) => h.gh);
+    assert.deepEqual(doGh.map((h) => [h.titulo, h.estimativa, h.gh.numero, h.gh.url]), [
+      ["US12 — Pagar com Pix", null, 12, "https://github.com/acme/app/issues/12"],
+      ["Exportar PDF", "3", 13, "https://github.com/acme/app/issues/13"],
+    ]);
+    const d1 = detalhesHistoria(nos[2], doGh[0].id);
+    assert.equal(d1.descricao, "Como cliente, quero pagar com Pix.", "a descrição sem o título e sem a checklist");
+    assert.deepEqual([d1.criterios.nome, d1.criterios.itens], ["Critérios de aceite", [{ titulo: "QR na tela", feito: false }, { titulo: "Confirma em 10 s", feito: true }]]);
+    assert.deepEqual(d1.subtarefas.itens.map((t) => [t.titulo, t.numero, t.url, t.feita]), [
+      ["Criar cobrança", 40, "https://github.com/acme/app/issues/40", true],
+      ["Tela do QR", 41, null, false],
+    ], "a etiqueta [US12] sai e um link que não é do GitHub não passa");
+    const d2 = detalhesHistoria(nos[2], doGh[1].id);
+    assert.ok(d2.subtarefas.itens.length > 5 && d2.subtarefas.itens.length + d2.subtarefas.mais === 45, "subtarefas cortadas para caber, com a conta do resto");
+    assert.ok(d2.criterios.itens.length >= 3 && d2.criterios.itens.length + d2.criterios.mais === 20, "critérios cortados para caber, com a conta do resto");
+    pk[1].salvarEstimativa(doGh[0].id, "8"); // outra pessoa salva
+    entregar();
+    await new Promise((ok) => setTimeout(ok, 0));
+    assert.deepEqual(gravados, [{ projeto: "PVT_x", item: "PVTI_1", campo: "F_est", numero: 8 }], "quem importou grava o 8 no card");
+    pk[2].votar("1");
+    entregar();
+    await new Promise((ok) => setTimeout(ok, 0));
+    assert.equal(gravados.length, 1, "o que já foi gravado não vai de novo a cada mudança da mesa");
+    pk[2].votar(null);
+    entregar();
+    // Um link vindo de outro participante só aparece se for do github.com.
+    nos[1].definir([["p/h/zz", { titulo: "x", ordem: 99, gh: { item: "i", url: "javascript:alert(1)" } }]]);
+    assert.equal(historias(nos[1]).find((h) => h.id === "zz").gh.url, null);
+    pk[1].apagarHistoria("zz");
+    entregar();
+  }
 
   // Retrospectiva: notas escondidas enquanto se escreve, 3 pontos por pessoa.
   const rt = nos.map((n) => new Retro(n, { nome: () => n.eu }));

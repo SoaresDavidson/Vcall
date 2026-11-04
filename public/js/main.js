@@ -43,6 +43,7 @@ import { installMotion, magnifyDock, playIntro, swap, stagger } from "./ui/motio
 import { MiniCall } from "./ui/minicall.js";
 import { watchHandsFree } from "./ui/handsfree.js";
 import { Daily, EstadoJogos, JOGOS, Poker, Retro, comArtigo, pedacosDoEstado } from "./features/jogos.js";
+import { KanbanGithub } from "./features/github.js";
 import { Codigo, Desenho, DuasVerdades, Mimica, QuemSouEu, Quiz, Roda, Stop } from "./features/festa.js";
 import { Forca, Lig4, Memoria, Sorteios, Velha } from "./features/tabuleiro.js";
 import { PainelJogos } from "./ui/jogos.js";
@@ -1953,6 +1954,10 @@ function buildBoard() {
 const jogosEstado = new EstadoJogos({ eu: "?" });
 const meuNome = () => app.profile?.name || "";
 const jogosPoker = new Poker(jogosEstado, { nome: meuNome });
+/** Cards do GitHub Projects no Poker: só no app de mesa, que é quem fala com o GitHub. */
+const jogosGithub = new KanbanGithub(jogosEstado, jogosPoker, window.vcallDesktop?.github || null, (texto, tom = "info") =>
+  toast(texto, { tone: tom, ms: 3200, key: "github" }),
+);
 const jogosRetro = new Retro(jogosEstado, { nome: meuNome });
 const jogosDaily = new Daily(jogosEstado);
 /** A lógica de cada jogo de festa e de tabuleiro (features/festa.js e features/tabuleiro.js). */
@@ -2010,6 +2015,7 @@ function wireJogos() {
   jogos = new PainelJogos({
     estado: jogosEstado,
     poker: jogosPoker,
+    github: jogosGithub,
     retro: jogosRetro,
     daily: jogosDaily,
     pessoas: pessoasDosJogos,

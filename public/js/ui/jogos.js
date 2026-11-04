@@ -29,6 +29,7 @@ import {
   JOGOS,
   MODELOS_RETRO,
   daily,
+  detalhesHistoria,
   historiaAtual,
   historias,
   mesaPoker,
@@ -37,6 +38,7 @@ import {
 import { confete, mmss, porChave, selo, sincronizar } from "./jogos-comum.js";
 import { VISTAS_FESTA } from "./festa.js";
 import { VISTAS_TABULEIRO } from "./tabuleiro.js";
+import { abrirGithub } from "./github.js";
 
 /** Telas dos jogos que não são de equipe: id -> classe (ui/festa.js, ui/tabuleiro.js). */
 const VISTAS = { ...VISTAS_FESTA, ...VISTAS_TABULEIRO };
@@ -62,6 +64,8 @@ export class PainelJogos {
   #relogio = 0;
   #festejado = "";
   #avisadoTimer = 0;
+  /** A aba aberta nos detalhes da US em votação: { hid, id }. */
+  #aba = null;
 
   /**
    * @param {object} o
@@ -275,6 +279,9 @@ export class PainelJogos {
       listaH,
       el("div.poker__add.poker__add--pilha", {}, [novas, el("button.btn.btn--primary", { type: "button", onClick: adicionar }, [icon("plus", { size: "sm" }), el("span", { text: "Adicionar" })])]),
       el("div.jogos__rodape", {}, [
+        this.o.github?.disponivel
+          ? el("button.btn.btn--ghost", { type: "button", dataset: { tip: "Trazer US do GitHub Projects, com subtarefas" }, onClick: () => abrirGithub(this.o.github, { avisar: this.o.avisar }) }, [icon("link", { size: "sm" }), el("span", { text: "GitHub" })])
+          : null,
         el("button.btn.btn--ghost", { type: "button", onClick: () => this.o.baixar(this.#csv(), "estimativas.csv", "text/csv") }, [icon("download", { size: "sm" }), el("span", { text: "CSV" })]),
         el("button.btn.btn--ghost", { type: "button", onClick: () => this.o.copiar(this.#textoHistorias(), "Estimativas copiadas") }, [icon("copy", { size: "sm" }), el("span", { text: "Copiar" })]),
       ]),
@@ -340,13 +347,19 @@ export class PainelJogos {
     // História em votação
     const lista = historias(estado);
     const atual = lista.find((h) => h.id === v.historia);
+    const det = atual ? detalhesHistoria(estado, atual.id) : null;
     sincronizar(p.historia, [
       {
         chave: "h",
-        sig: atual ? `v|${atual.titulo}` : "livre",
+        sig: atual ? JSON.stringify([atual.id, atual.titulo, atual.gh, det]) : "livre",
         criar: () =>
           atual
-            ? el("div.poker__historiaTxt", {}, [el("span.jogos__rotulo", { text: "Votando" }), el("strong", { text: atual.titulo })])
+            ? el("div.poker__historiaTxt", {}, [
+                el("span.jogos__rotulo", { text: "Votando" }),
+                el("strong", { text: atual.titulo }),
+                atual.gh?.url ? el("a.poker__card", { href: atual.gh.url, target: "_blank", rel: "noopener noreferrer", text: atual.gh.numero ? `#${atual.gh.numero} · abrir no GitHub` : "Abrir no GitHub" }) : null,
+                det.vazio ? null : this.#detalhes(atual.id, det),
+              ])
             : el("div.poker__historiaTxt", {}, [el("span.jogos__rotulo", { text: "Votação livre" }), el("span.muted", { text: "Adicione histórias ao lado para estimar uma de cada vez." })]),
       },
     ]);
@@ -419,6 +432,72 @@ export class PainelJogos {
           }))
         : [{ chave: "vazio", sig: "", criar: () => el("li.poker__vazio", { text: "Nenhuma história ainda." }) }],
     );
+  }
+
+  /**
+   * Subtarefas, critérios de aceite e descrição da US em votação, em abas
+   * que cada pessoa abre e fecha para si (vem do kanban do GitHub).
+   */
+  #detalhes(hid, det) {
+    const abas = [];
+    const { subtarefas: s, criterios: c } = det;
+    const linha = (feito, filhos) => el("li", { class: feito ? "is-feito" : "" }, [icon(feito ? "check" : "circle", { size: "sm", label: feito ? "Feito" : "Aberto" }), ...filhos]);
+    const resto = (n, oQue) => (n ? el("li.poker__mais", { text: `e mais ${n} ${oQue} no GitHub` }) : null);
+    if (s.itens.length) {
+      abas.push({
+        id: "subtarefas",
+        nome: "Subtarefas",
+        conta: `${s.feitas}/${s.itens.length + s.mais}`,
+        corpo: () =>
+          el("ul.poker__check", {}, [
+            ...s.itens.map((t) =>
+              linha(t.feita, [
+                t.url ? el("a.poker__num", { href: t.url, target: "_blank", rel: "noopener noreferrer", text: t.numero ? `#${t.numero}` : "abrir" }) : null,
+                el("span", { text: t.titulo }),
+              ]),
+            ),
+            resto(s.mais, "subtarefas"),
+          ]),
+      });
+    }
+    if (c.itens.length) {
+      abas.push({
+        id: "criterios",
+        nome: c.nome,
+        conta: `${c.itens.filter((x) => x.feito).length}/${c.itens.length + c.mais}`,
+        corpo: () => el("ul.poker__check", {}, [...c.itens.map((x) => linha(x.feito, [el("span", { text: x.titulo })])), resto(c.mais, "itens")]),
+      });
+    }
+    if (det.descricao) abas.push({ id: "descricao", nome: "Descrição", conta: "", corpo: () => el("p.poker__desc", { text: det.descricao }) });
+
+    // As contagens ficam sempre à vista; o conteúdo abre por cima da mesa (sem empurrar as cartas) e fecha ao clicar fora.
+    if (this.#aba?.hid !== hid) this.#aba = { hid, id: null };
+    const painel = el("div.poker__painel", { role: "tabpanel" });
+    const botoes = el("div.poker__abas", { role: "tablist", "aria-label": "Detalhes da US" });
+    const caixa = el("div.poker__detalhes", {}, [botoes, painel]);
+    const foraFecha = (e) => {
+      if (!caixa.isConnected || !this.#aba.id) return;
+      if (caixa.contains(e.target)) return void document.addEventListener("pointerdown", foraFecha, { once: true });
+      this.#aba.id = null;
+      mostrar();
+    };
+    const mostrar = () => {
+      const aberta = abas.find((a) => a.id === this.#aba.id);
+      for (const b of botoes.children) b.setAttribute("aria-selected", String(b.dataset.id === this.#aba.id));
+      painel.hidden = !aberta;
+      painel.replaceChildren(aberta ? aberta.corpo() : "");
+      if (aberta) setTimeout(() => document.addEventListener("pointerdown", foraFecha, { once: true }), 0);
+    };
+    for (const a of abas) {
+      botoes.append(
+        el("button.poker__aba", { type: "button", role: "tab", dataset: { id: a.id }, onClick: () => ((this.#aba.id = this.#aba.id === a.id ? null : a.id), mostrar()) }, [
+          el("span", { text: a.nome }),
+          a.conta ? el("span.poker__abaConta", { text: a.conta }) : null,
+        ]),
+      );
+    }
+    mostrar();
+    return caixa;
   }
 
   #centro(v, votos, souEspectador) {

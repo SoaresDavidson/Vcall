@@ -38,6 +38,7 @@ import { Sfu } from "./sfu.js";
 import { RedeVcall, limparPessoa } from "./rede.js";
 import { conferir } from "./atualizacao.js";
 import * as atualizador from "./atualizador.js";
+import * as github from "./github.js";
 import { ESQUEMA, destinoDoLink, linkDosArgumentos, registrarEsquema } from "./protocol.js";
 import { descreverFontes, montarResposta, sessaoWayland, umPorVez, somDoComputadorNaLista } from "./captura.js";
 import { argsParaX11, executavelParaRegistrar, modoDeReabrir, opcoesDeExibicao } from "./linux.js";
@@ -641,13 +642,13 @@ function abrirSobreposicao(canto = cantoSobreposicao) {
   sobreposicao.setIgnoreMouseEvents(true);
   sobreposicao.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   sobreposicao.webContents.on("will-navigate", (e) => e.preventDefault());
+  sobreposicao.once("ready-to-show", () => sobreposicao?.showInactive());
   // O canto de agora, não o desta chamada: um pedido que chega com a janela
-  // ainda carregando manda a mensagem para o nada, e este envio a escrevia
-  // por cima com o canto velho (o teste do canto falhava às vezes no CI).
-  sobreposicao.once("ready-to-show", () => {
-    sobreposicao?.showInactive();
-    sobreposicao?.webContents.send("vcall:canto", cantoSobreposicao);
-  });
+  // ainda carregando manda a mensagem para o nada. E vai no did-finish-load,
+  // não no ready-to-show: o script da página é um módulo e roda depois da
+  // primeira pintura, então no ready-to-show ainda não havia quem ouvisse e a
+  // sobreposição ficava no canto padrão (o teste do canto falhava às vezes no CI).
+  sobreposicao.webContents.once("did-finish-load", () => sobreposicao?.webContents.send("vcall:canto", cantoSobreposicao));
   sobreposicao.on("closed", () => (sobreposicao = null));
   sobreposicao.loadURL(`${baseUrl}/sobreposicao.html`);
 }
@@ -734,6 +735,22 @@ ipcMain.handle("vcall:atualizacao", (e, acao) => {
   if (acao === "verificar") return atualizador.verificar();
   if (acao === "instalar") return atualizador.instalar();
   return atualizador.estadoAtual();
+});
+
+/*
+ * O kanban do GitHub no Planning Poker (desktop/github.js). Só a página do
+ * próprio app usa o seu token: a sala de outra pessoa não lê nem grava nos
+ * seus projetos.
+ */
+ipcMain.handle("vcall:github", (e, pedido) => {
+  let origem = "";
+  try {
+    origem = new URL(e.senderFrame?.url || "").origin;
+  } catch {
+    /* sem origem: recusa abaixo */
+  }
+  if (origem !== baseUrl) return { erro: "O GitHub só conecta na sala aberta pelo seu próprio Vcall." };
+  return github.pedir(String(pedido?.acao || ""), pedido?.dados);
 });
 
 ipcMain.handle("vcall:info", () => ({

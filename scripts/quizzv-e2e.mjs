@@ -220,6 +220,8 @@ async function rodar(motor) {
 
     cel.pedir({ tipo: "proxima" });
     await pagCel.waitForSelector(".qvp__opcao--4", { timeout: 12_000 });
+    // A chamada recebe a pergunta pelo próprio canal, não junto com o celular: contar na hora falhava às vezes no WebKit.
+    await bruno.page.waitForSelector(".quiz__opcao--roxo", { timeout: 6000 }).catch(() => {});
     check(motor, "pergunta com cinco alternativas (até a E)", (await bruno.page.locator(".quiz__opcao--roxo").count()) === 1);
     await pagCel.click(".qvp__opcao--2");
     await bruno.page.waitForSelector(".quiz__opcao--amarelo.is-minha", { timeout: 6000 });
