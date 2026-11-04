@@ -167,6 +167,18 @@ const ICONS = [
 ];
 
 /** Aliases semânticos: id no app -> nome do arquivo Lucide. */
+/** Id no app -> nome nas Octicons (o kanban do GitHub no Planning Poker). */
+const OCTICONS = {
+  github: "mark-github-16",
+  "gh-issue": "issue-opened-16",
+  "gh-issue-closed": "issue-closed-16",
+  "gh-sub-issue": "issue-tracks-16",
+  "gh-tag": "tag-16",
+  "gh-milestone": "milestone-16",
+  "gh-people": "people-16",
+  "gh-project": "project-16",
+};
+
 const ALIASES = {
   "network-0": "signal-zero",
   "network-1": "signal-low",
@@ -245,6 +257,23 @@ async function buildSprite() {
     manifest[name] = viewBox;
     seen.set(name, true);
   }
+
+  // Marcas que o Lucide não traz: o símbolo do GitHub, das Octicons (MIT), cheio e sem traço.
+  const octicons = path.join(root, "node_modules", "@iconify-json", "octicon", "icons.json");
+  if (existsSync(octicons)) {
+    const pacote = JSON.parse(await readFile(octicons, "utf8"));
+    for (const [id, nome] of Object.entries(OCTICONS)) {
+      const o = pacote.icons[nome];
+      if (!o) {
+        console.warn(`  ! ícone ausente nas Octicons: ${nome}`);
+        continue;
+      }
+      const viewBox = `0 0 ${o.width || pacote.width || 16} ${o.height || pacote.height || 16}`;
+      symbols.push(`<symbol id="i-${id}" viewBox="${viewBox}"><g stroke="none">${o.body}</g></symbol>`);
+      manifest[id] = viewBox;
+      seen.set(id, true);
+    }
+  } else console.warn("  ! @iconify-json/octicon não instalado: sem o símbolo do GitHub");
 
   for (const [alias, target] of Object.entries(ALIASES)) {
     if (!seen.has(target)) {

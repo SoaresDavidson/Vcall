@@ -60,14 +60,46 @@ direto do quadro (kanban) de um GitHub Project:
    Vêm marcadas as que ainda não têm estimativa; as que já estão na mesa não
    entram de novo. Cada linha mostra quantas subtarefas já foram fechadas.
 
-Na mesa, a US em votação mostra o link para o card e três abas: **Subtarefas**
-(as sub-issues, com o que já foi fechado), a **checklist** do corpo da issue
-(com o nome do título de cima, em geral "Critérios de aceite") e a
-**Descrição**. Cada pessoa abre e fecha as abas para si.
+Na mesa, a US em votação mostra o tipo, as etiquetas e os responsáveis da
+issue, o link para o card e três abas: **Subtarefas** (as sub-issues, com o que
+já foi fechado), a **checklist** do corpo da issue (com o nome do título de
+cima, em geral "Critérios de aceite") e a **Descrição**. Cada pessoa abre e
+fecha as abas para si.
 
 Ao salvar a estimativa, o número vai para o campo escolhido no projeto (um
 campo de número, como *Estimate*), não importa quem salvou: quem importou é
 que grava, pelo computador dele.
+
+#### Subtarefas com nota
+
+As sub-issues abertas de cada US entram na lista logo abaixo dela, recuadas,
+e cada uma tem a própria votação, com a descrição e os critérios dela. Ao
+salvar a US, a mesa passa para a primeira subtarefa. A nota vai para o quadro
+como a da US; se a subtarefa ainda não estava no quadro, ela entra na coluna
+da US.
+
+A aba **Subtarefas** mostra a nota de cada uma (ou **Votar**, para levar a
+votação até ela) e a soma das notas, para comparar com a estimativa da US.
+
+Quem estima só as US desmarca **Votar também as subtarefas** na hora de
+importar.
+
+#### Dividir uma US grande
+
+Se a US (ou uma subtarefa) ficou grande demais, o botão **Dividir** cria
+sub-issues novas embaixo dela, no GitHub, sem sair da chamada. Dá para
+preencher o que se preenche ao criar uma issue lá:
+
+- título e descrição (com um atalho que insere **Critérios de aceite**);
+- responsáveis e etiquetas;
+- tipo (nos repositórios de organização que usam tipos de issue);
+- marco (já vem o da US);
+- coluna e estimativa no quadro (ou **Votar depois**).
+
+Com **Criar outra depois desta** marcado, o formulário limpa o título e a
+descrição e mantém o resto, para criar várias seguidas. Cada uma entra na mesa
+logo abaixo da US. Só quem importou a US vê o botão, porque é o GitHub dele que
+cria as issues.
 
 ## Retrospectiva
 

@@ -1,11 +1,13 @@
 /**
- * ui/github.js — o diálogo que traz US do GitHub Projects para o Planning
- * Poker: conectar, escolher o projeto e marcar as US de uma coluna. A lógica
- * fica em features/github.js; quem fala com o GitHub é o app de mesa.
+ * ui/github.js — os diálogos do GitHub Projects no Planning Poker: trazer
+ * US (conectar, escolher o projeto e marcar as US de uma coluna) e dividir
+ * uma US grande em subtarefas novas. A lógica fica em features/github.js;
+ * quem fala com o GitHub é o app de mesa.
  */
 import { el, icon } from "../lib/dom.js";
 
 const ULTIMO = "vcall:github-projeto";
+const SUBS = "vcall:github-subtarefas";
 const TOKEN_URL = "https://github.com/settings/tokens/new?scopes=project,repo,read:org&description=Vcall%20Planning%20Poker";
 
 const guardado = (k) => {
@@ -50,6 +52,7 @@ export function abrirGithub(kanban, { avisar }) {
   dlg.append(
     el("div.modal__card", {}, [
       el("div.modal__head", {}, [
+        el("span.gh__marca", { "aria-hidden": "true" }, [icon("github")]),
         el("h2.modal__title", { text: "Histórias do GitHub" }),
         el("span.spacer"),
         conta,
@@ -219,7 +222,10 @@ export function abrirGithub(kanban, { avisar }) {
     const { projeto, cards } = st.quadro;
     const naMesa = kanban.naMesa();
     const colunas = projeto.status?.colunas || [];
-    const daColuna = () => (colunas.length ? cards.filter((c) => c.coluna === st.coluna) : cards);
+    // Uma sub-issue cuja US também está no quadro vem junto com ela: não aparece solta.
+    const urls = new Set(cards.map((c) => c.url).filter(Boolean));
+    const soltos = cards.filter((c) => !(c.pai && urls.has(c.pai)));
+    const daColuna = () => (colunas.length ? soltos.filter((c) => c.coluna === st.coluna) : soltos);
     const padrao = () => new Set(daColuna().filter((c) => !naMesa.has(c.item) && c.estimativa == null).map((c) => c.item));
     st.marcados = padrao();
 
@@ -234,11 +240,13 @@ export function abrirGithub(kanban, { avisar }) {
     ]);
     campo.value = st.quadro.campo?.id || "";
     const importar = el("button.btn.btn--primary", { type: "button" });
+    const comSubs = el("input", { type: "checkbox", checked: guardado(SUBS) !== "0" });
+    comSubs.addEventListener("change", () => guardar(SUBS, comSubs.checked ? "1" : "0"));
 
     const desenhar = () => {
       abas.replaceChildren(
         ...colunas.map((c) => {
-          const n = cards.filter((x) => x.coluna === c.id).length;
+          const n = soltos.filter((x) => x.coluna === c.id).length;
           return el("button.gh__aba", { type: "button", "aria-pressed": String(c.id === st.coluna), onClick: () => ((st.coluna = c.id), (st.marcados = padrao()), desenhar()) }, [
             el("span", { text: c.nome }),
             el("span.gh__qtd", { text: String(n) }),
@@ -292,7 +300,7 @@ export function abrirGithub(kanban, { avisar }) {
       ocupado(importar, async () => {
         const escolhidos = cards.filter((c) => st.marcados.has(c.item));
         importar.replaceChildren(icon("loader-2", { size: "sm", className: "icon--spin" }), el("span", { text: "Trazendo subtarefas…" }));
-        const r = await kanban.importar(projeto, escolhidos, { campo: projeto.numeros.find((f) => f.id === campo.value) || null, todos: cards });
+        const r = await kanban.importar(projeto, escolhidos, { campo: projeto.numeros.find((f) => f.id === campo.value) || null, todos: cards, subtarefas: comSubs.checked });
         avisar(`${plural(r.novos, "US importada", "US importadas")}${r.faltam ? `; importe de novo para trazer mais ${r.faltam}` : ""}`, "ok");
         dlg.close();
       }).finally(() => dlg.isConnected && rodape()),
@@ -305,9 +313,12 @@ export function abrirGithub(kanban, { avisar }) {
       lista,
     );
     pe.replaceChildren(
-      el("label.gh__destino", {}, [
-        el("span.field__label", { text: "A estimativa vai para" }),
-        projeto.numeros.length ? campo : el("span.muted", { text: "Crie um campo de número no projeto (ex.: Estimate) para gravar." }),
+      el("div.gh__opcoesPe", {}, [
+        el("label.gh__destino", {}, [
+          el("span.field__label", { text: "A estimativa vai para" }),
+          projeto.numeros.length ? campo : el("span.muted", { text: "Crie um campo de número no projeto (ex.: Estimate) para gravar." }),
+        ]),
+        el("label.gh__outra", { dataset: { tip: "Cada sub-issue aberta vira um item da mesa, logo abaixo da US" } }, [comSubs, icon("gh-sub-issue", { size: "sm" }), el("span", { text: "Votar também as subtarefas" })]),
       ]),
       importar,
     );
@@ -326,4 +337,223 @@ export function abrirGithub(kanban, { avisar }) {
       return telaProjetos();
     })
     .catch((err) => corpo.replaceChildren(el("div.gh__carregando", {}, [icon("alert-triangle", { size: "sm" }), el("span", { text: err.message })])));
+}
+
+/* ------------------------------------------------------------------ *
+ * Dividir: subtarefas novas no GitHub, embaixo da US em votação
+ * ------------------------------------------------------------------ */
+
+const bolinha = (cor) => el("span.gh__bolinha", { "aria-hidden": "true", style: cor ? { "--cor": `#${cor}` } : {} });
+
+/**
+ * Escolha de vários (responsáveis, etiquetas) como no GitHub: a lista abre
+ * com uma busca e o escolhido fica à vista embaixo do nome.
+ * @param {{ nome:string, icone:string, vazio:string, opcoes:{id:string, rotulo:string, detalhe?:string, cor?:string}[] }} o
+ */
+function seletor({ nome, icone, vazio, opcoes }) {
+  const marcados = new Set();
+  const escolhidos = el("div.gh__escolhidos");
+  const filtro = el("input.input", { type: "search", placeholder: "Procurar", "aria-label": `Procurar em ${nome.toLowerCase()}` });
+  const lista = el("ul.gh__opcoes", { "aria-label": nome });
+  const caixa = el("details.gh__seletor", {}, [
+    el("summary.gh__secao", {}, [icon(icone, { size: "sm" }), el("span", { text: nome }), el("span.spacer"), icon("chevron-down", { size: "sm", className: "gh__seta" })]),
+    el("div.gh__pop", {}, [filtro, lista]),
+  ]);
+  const mostrarEscolhidos = () =>
+    escolhidos.replaceChildren(
+      ...(marcados.size
+        ? opcoes.filter((o) => marcados.has(o.id)).map((o) => el("span.gh__escolhido", {}, [o.cor ? bolinha(o.cor) : null, el("span", { text: o.rotulo })]))
+        : [el("span.muted", { text: vazio })]),
+    );
+  const mostrarLista = () => {
+    const q = filtro.value.trim().toLowerCase();
+    const vis = opcoes.filter((o) => !q || `${o.rotulo} ${o.detalhe || ""}`.toLowerCase().includes(q)).slice(0, 80);
+    lista.replaceChildren(
+      ...vis.map((o) => {
+        const cx = el("input", { type: "checkbox", checked: marcados.has(o.id) });
+        cx.addEventListener("change", () => {
+          if (cx.checked) marcados.add(o.id);
+          else marcados.delete(o.id);
+          mostrarEscolhidos();
+        });
+        return el("li", {}, [
+          el("label.gh__opcao", {}, [cx, o.cor ? bolinha(o.cor) : null, el("span.gh__opcaoTxt", {}, [el("span", { text: o.rotulo }), o.detalhe ? el("span.muted.truncate", { text: o.detalhe }) : null])]),
+        ]);
+      }),
+    );
+    if (!vis.length) lista.append(el("li.gh__vazio", { text: opcoes.length ? "Nada com esse nome." : "Nada para escolher neste repositório." }));
+  };
+  filtro.addEventListener("input", mostrarLista);
+  // Esc fecha só a lista, não o formulário inteiro (e o que já foi escrito).
+  caixa.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !caixa.open) return;
+    e.preventDefault();
+    e.stopPropagation();
+    caixa.open = false;
+    caixa.querySelector("summary").focus();
+  });
+  caixa.addEventListener("toggle", () => {
+    if (!caixa.open) return;
+    mostrarLista();
+    filtro.focus();
+  });
+  mostrarEscolhidos();
+  return {
+    el: el("div.gh__campoLado", {}, [caixa, escolhidos]),
+    caixa,
+    ids: () => [...marcados],
+    escolhidos: () => opcoes.filter((o) => marcados.has(o.id)),
+  };
+}
+
+/** Um campo de uma escolha só, na coluna do lado: o nome com o ícone e um select. */
+function campoLado(nome, icone, controle) {
+  return el("label.gh__campoLado", {}, [el("span.gh__secao", {}, [icon(icone, { size: "sm" }), el("span", { text: nome })]), controle]);
+}
+
+const opcoesSelect = (vazio, itens) => [el("option", { value: "", text: vazio }), ...itens.map(([v, t]) => el("option", { value: v, text: t }))];
+
+/**
+ * O formulário que cria subtarefas no GitHub embaixo da história `historia`
+ * (a US ou a subtarefa que ficou grande demais), com o que dá para escolher
+ * ao criar uma issue lá. Cada uma entra na mesa logo abaixo.
+ * @param {import("../features/github.js").KanbanGithub} kanban
+ */
+export function abrirDividir(kanban, historia, { avisar }) {
+  const dlg = el("dialog.modal.gh.gh--dividir");
+  const corpo = el("div.gh__corpo");
+  const erro = el("p.gh__erro", { role: "alert" });
+  const pe = el("div.gh__pe");
+  dlg.append(
+    el("div.modal__card", {}, [
+      el("div.modal__head", {}, [
+        el("span.gh__marca", { "aria-hidden": "true" }, [icon("github")]),
+        el("h2.modal__title", { text: "Dividir em subtarefas" }),
+        el("span.spacer"),
+        el("button.btn.btn--icon.btn--ghost", { type: "button", "aria-label": "Fechar", onClick: () => dlg.close() }, [icon("x")]),
+      ]),
+      corpo,
+      erro,
+      pe,
+    ]),
+  );
+  // Digitar aqui não aciona os atalhos da chamada.
+  dlg.addEventListener("keydown", (e) => e.key !== "Escape" && e.stopPropagation());
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+  corpo.replaceChildren(el("div.gh__carregando", { role: "status" }, [icon("loader-2", { size: "sm", className: "icon--spin" }), el("span", { text: "Lendo o repositório…" })]));
+
+  kanban
+    .formulario(historia)
+    .then((f) => dlg.isConnected && montar(f))
+    .catch((err) => corpo.replaceChildren(el("div.gh__carregando", {}, [icon("alert-triangle", { size: "sm" }), el("span", { text: err.message })])));
+
+  function montar({ repo, quadro, coluna, cartas }) {
+    const titulo = el("input.input", { type: "text", maxLength: 256, placeholder: "O que precisa ser feito", "aria-label": "Título", autocomplete: "off" });
+    const desc = el("textarea.input.gh__desc", { rows: 7, maxLength: 60000, placeholder: "Detalhes, contexto, como testar… (aceita Markdown)", "aria-label": "Descrição" });
+    const inserir = (texto) => {
+      desc.focus();
+      desc.setRangeText(texto, desc.selectionStart, desc.selectionEnd, "end");
+    };
+    const atalhoCriterios = el("button.btn.btn--ghost.gh__mini", { type: "button", onClick: () => inserir(`${desc.value && !desc.value.endsWith("\n") ? "\n\n" : ""}## Critérios de aceite\n- [ ] `) }, [
+      icon("list-checks", { size: "sm" }),
+      el("span", { text: "Critérios de aceite" }),
+    ]);
+
+    const pessoas = seletor({ nome: "Responsáveis", icone: "gh-people", vazio: "Ninguém", opcoes: repo.pessoas.map((p) => ({ id: p.id, rotulo: p.login, detalhe: p.nome })) });
+    const etiquetas = seletor({ nome: "Etiquetas", icone: "gh-tag", vazio: "Nenhuma", opcoes: repo.etiquetas.map((e) => ({ id: e.id, rotulo: e.nome, detalhe: e.descricao, cor: e.cor })) });
+    const tipo = el("select.input", { "aria-label": "Tipo" }, opcoesSelect("Sem tipo", repo.tipos.map((t) => [t.id, t.nome])));
+    const marco = el("select.input", { "aria-label": "Marco" }, opcoesSelect("Sem marco", repo.marcos.map((m) => [m.id, m.prazo ? `${m.titulo} · até ${new Date(m.prazo).toLocaleDateString("pt-BR", { timeZone: "UTC" })}` : m.titulo])));
+    marco.value = repo.marcos.some((m) => m.id === repo.pai.marco) ? repo.pai.marco : ""; // o marco da US, como ponto de partida
+    const colunas = quadro.projeto.status?.colunas || [];
+    const colunaSel = el("select.input", { "aria-label": "Coluna do quadro" }, opcoesSelect("Sem coluna", colunas.map((c) => [c.id, c.nome])));
+    colunaSel.value = colunas.some((c) => c.id === coluna) ? coluna : "";
+    const estimativa = el("select.input", { "aria-label": `Estimativa (${quadro.campo?.nome || ""})` }, opcoesSelect("Votar depois", cartas.map((c) => [c, c])));
+    // Clicar fora da lista aberta fecha a lista.
+    dlg.addEventListener("pointerdown", (e) => {
+      for (const s of [pessoas, etiquetas]) if (s.caixa.open && !s.caixa.contains(e.target)) s.caixa.open = false;
+    });
+
+    const criadas = el("ul.gh__criadas", { "aria-label": "Criadas agora" });
+    const outra = el("input", { type: "checkbox" });
+    const criar = el("button.btn.btn--primary", { type: "button" }, [icon("github", { size: "sm" }), el("span", { text: "Criar subtarefa" })]);
+    const enviar = async () => {
+      erro.textContent = "";
+      if (!titulo.value.trim()) {
+        erro.textContent = "Dê um título para a subtarefa.";
+        return titulo.focus();
+      }
+      criar.disabled = true;
+      try {
+        const tipoEsc = repo.tipos.find((t) => t.id === tipo.value);
+        const r = await kanban.criarSubtarefa(
+          historia,
+          {
+            repositorio: repo.id,
+            titulo: titulo.value,
+            corpo: desc.value,
+            pessoas: pessoas.ids(),
+            etiquetas: etiquetas.ids(),
+            marco: marco.value,
+            tipo: tipo.value,
+            coluna: colunaSel.value,
+            estimativa: quadro.campo ? estimativa.value : "",
+          },
+          {
+            etiquetas: etiquetas.escolhidos().map((e) => ({ nome: e.rotulo, cor: e.cor })),
+            pessoas: pessoas.escolhidos().map((p) => p.rotulo),
+            tipo: tipoEsc ? { nome: tipoEsc.nome, cor: tipoEsc.cor } : null,
+          },
+        );
+        if (r.aviso) avisar(r.aviso, "warn");
+        else avisar(`Subtarefa #${r.numero} criada no GitHub`, "ok");
+        criadas.append(el("li", {}, [icon("gh-issue", { size: "sm" }), el("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", text: `#${r.numero}` }), el("span.truncate", { text: r.titulo })]));
+        if (!outra.checked) return dlg.close();
+        // Como no GitHub: o resto fica escolhido para a próxima.
+        titulo.value = "";
+        desc.value = "";
+        estimativa.value = "";
+        titulo.focus();
+      } catch (err) {
+        erro.textContent = err.message;
+      } finally {
+        criar.disabled = false;
+      }
+    };
+    criar.addEventListener("click", enviar);
+    titulo.addEventListener("keydown", (e) => e.key === "Enter" && enviar());
+    desc.addEventListener("keydown", (e) => e.key === "Enter" && (e.ctrlKey || e.metaKey) && enviar());
+
+    const pai = historia.gh?.numero ? `#${historia.gh.numero} · ${historia.titulo}` : historia.titulo;
+    corpo.replaceChildren(
+      el("div.gh__pai", {}, [
+        icon("gh-sub-issue", { size: "sm" }),
+        el("span.muted", { text: "Embaixo de" }),
+        el("strong.truncate", { text: pai }),
+        el("span.spacer"),
+        el("span.gh__repo", {}, [icon("github", { size: "sm" }), el("span.truncate", { text: repo.nome })]),
+      ]),
+      el("div.gh__form", {}, [
+        el("div.gh__principal", {}, [
+          el("label.gh__rotulo", {}, [el("span.field__label", { text: "Título" }), titulo]),
+          el("div.gh__rotulo", {}, [el("div.row", {}, [el("span.field__label", { text: "Descrição" }), el("span.spacer"), atalhoCriterios]), desc]),
+          criadas,
+        ]),
+        el("aside.gh__lado", { "aria-label": "Detalhes da issue" }, [
+          pessoas.el,
+          etiquetas.el,
+          repo.tipos.length ? campoLado("Tipo", "gh-issue", tipo) : null,
+          campoLado("Marco", "gh-milestone", repo.marcos.length ? marco : el("span.muted", { text: "Nenhum marco aberto" })),
+          el("div.gh__campoLado.gh__projetoLado", {}, [
+            el("span.gh__secao", {}, [icon("gh-project", { size: "sm" }), el("span.truncate", { text: quadro.projeto.titulo || "Projeto" })]),
+            colunas.length ? el("label.gh__sub", {}, [el("span.muted", { text: "Coluna" }), colunaSel]) : null,
+            quadro.campo ? el("label.gh__sub", {}, [el("span.muted", { text: quadro.campo.nome }), estimativa]) : el("span.muted", { text: "Sem campo de estimativa" }),
+          ]),
+        ]),
+      ]),
+    );
+    pe.replaceChildren(el("label.gh__outra", {}, [outra, el("span", { text: "Criar outra depois desta" })]), el("span.spacer"), criar);
+    titulo.focus();
+  }
 }

@@ -33,12 +33,13 @@ import {
   historiaAtual,
   historias,
   mesaPoker,
+  numero,
   retro,
 } from "../features/jogos.js";
 import { confete, mmss, porChave, selo, sincronizar } from "./jogos-comum.js";
 import { VISTAS_FESTA } from "./festa.js";
 import { VISTAS_TABULEIRO } from "./tabuleiro.js";
-import { abrirGithub } from "./github.js";
+import { abrirDividir, abrirGithub } from "./github.js";
 
 /** Telas dos jogos que não são de equipe: id -> classe (ui/festa.js, ui/tabuleiro.js). */
 const VISTAS = { ...VISTAS_FESTA, ...VISTAS_TABULEIRO };
@@ -280,7 +281,7 @@ export class PainelJogos {
       el("div.poker__add.poker__add--pilha", {}, [novas, el("button.btn.btn--primary", { type: "button", onClick: adicionar }, [icon("plus", { size: "sm" }), el("span", { text: "Adicionar" })])]),
       el("div.jogos__rodape", {}, [
         this.o.github?.disponivel
-          ? el("button.btn.btn--ghost", { type: "button", dataset: { tip: "Trazer US do GitHub Projects, com subtarefas" }, onClick: () => abrirGithub(this.o.github, { avisar: this.o.avisar }) }, [icon("link", { size: "sm" }), el("span", { text: "GitHub" })])
+          ? el("button.btn.btn--ghost", { type: "button", dataset: { tip: "Trazer US do GitHub Projects, com subtarefas" }, onClick: () => abrirGithub(this.o.github, { avisar: this.o.avisar }) }, [icon("github", { size: "sm" }), el("span", { text: "GitHub" })])
           : null,
         el("button.btn.btn--ghost", { type: "button", onClick: () => this.o.baixar(this.#csv(), "estimativas.csv", "text/csv") }, [icon("download", { size: "sm" }), el("span", { text: "CSV" })]),
         el("button.btn.btn--ghost", { type: "button", onClick: () => this.o.copiar(this.#textoHistorias(), "Estimativas copiadas") }, [icon("copy", { size: "sm" }), el("span", { text: "Copiar" })]),
@@ -298,7 +299,7 @@ export class PainelJogos {
 
   #textoHistorias() {
     return historias(this.o.estado)
-      .map((h) => `${h.titulo}: ${h.estimativa ?? "—"}`)
+      .map((h) => `${"  ".repeat(h.nivel)}${h.nivel ? "- " : ""}${h.titulo}: ${h.estimativa ?? "—"}`)
       .join("\n");
   }
 
@@ -348,17 +349,28 @@ export class PainelJogos {
     const lista = historias(estado);
     const atual = lista.find((h) => h.id === v.historia);
     const det = atual ? detalhesHistoria(estado, atual.id) : null;
+    const acima = atual?.pai ? lista.find((h) => h.id === atual.pai) : null;
+    const filhas = atual ? lista.filter((h) => h.pai === atual.id) : [];
+    const dividir = !!(atual && this.o.github?.podeDividir(atual));
     sincronizar(p.historia, [
       {
         chave: "h",
-        sig: atual ? JSON.stringify([atual.id, atual.titulo, atual.gh, det]) : "livre",
+        sig: atual ? JSON.stringify([atual.id, atual.titulo, atual.gh, det, acima?.titulo, dividir, filhas.map((f) => [f.id, f.gh?.url, f.estimativa])]) : "livre",
         criar: () =>
           atual
             ? el("div.poker__historiaTxt", {}, [
-                el("span.jogos__rotulo", { text: "Votando" }),
+                acima ? el("span.poker__de", {}, [icon("gh-sub-issue", { size: "sm" }), el("span.truncate", { text: `Subtarefa de ${acima.titulo}` })]) : el("span.jogos__rotulo", { text: "Votando" }),
                 el("strong", { text: atual.titulo }),
-                atual.gh?.url ? el("a.poker__card", { href: atual.gh.url, target: "_blank", rel: "noopener noreferrer", text: atual.gh.numero ? `#${atual.gh.numero} · abrir no GitHub` : "Abrir no GitHub" }) : null,
-                det.vazio ? null : this.#detalhes(atual.id, det),
+                this.#marcas(det.marcas),
+                atual.gh?.url || dividir
+                  ? el("div.poker__gh", {}, [
+                      atual.gh?.url ? el("a.poker__card", { href: atual.gh.url, target: "_blank", rel: "noopener noreferrer" }, [icon("github", { size: "sm" }), el("span", { text: atual.gh.numero ? `#${atual.gh.numero} · abrir no GitHub` : "Abrir no GitHub" })]) : null,
+                      dividir
+                        ? el("button.btn.btn--ghost.poker__dividir", { type: "button", dataset: { tip: "Grande demais? Crie subtarefas no GitHub" }, onClick: () => abrirDividir(this.o.github, atual, { avisar: this.o.avisar }) }, [icon("gh-sub-issue", { size: "sm" }), el("span", { text: "Dividir" })])
+                        : null,
+                    ])
+                  : null,
+                det.vazio ? null : this.#detalhes(atual.id, det, filhas),
               ])
             : el("div.poker__historiaTxt", {}, [el("span.jogos__rotulo", { text: "Votação livre" }), el("span.muted", { text: "Adicione histórias ao lado para estimar uma de cada vez." })]),
       },
@@ -420,11 +432,13 @@ export class PainelJogos {
       lista.length
         ? lista.map((h) => ({
             chave: h.id,
-            sig: JSON.stringify([h.titulo, h.estimativa, h.id === v.historia]),
+            sig: JSON.stringify([h.titulo, h.estimativa, h.id === v.historia, h.nivel, h.gh?.numero]),
             criar: () =>
-              el("li.poker__item", { class: h.id === v.historia ? "is-atual" : "" }, [
+              el("li.poker__item", { class: `${h.id === v.historia ? "is-atual" : ""}${h.nivel ? " is-sub" : ""}`, style: h.nivel ? { "--nivel": String(Math.min(h.nivel, 3)) } : {} }, [
                 el("button.poker__itemBtn", { type: "button", "aria-label": `Votar: ${h.titulo}`, onClick: () => poker.escolherHistoria(h.id) }, [
+                  h.nivel ? icon("gh-sub-issue", { size: "sm", className: "poker__subIco" }) : null,
                   el("span.truncate", { text: h.titulo }),
+                  h.gh?.numero ? el("span.poker__ghNum", { text: `#${h.gh.numero}` }) : null,
                   h.estimativa != null ? el("span.poker__estimativa", { text: h.estimativa }) : h.id === v.historia ? el("span.jogos__rotulo", { text: "votando" }) : null,
                 ].filter(Boolean)),
                 el("button.btn.btn--icon.btn--ghost", { type: "button", "aria-label": `Apagar: ${h.titulo}`, onClick: () => poker.apagarHistoria(h.id) }, [icon("trash-2", { size: "sm" })]),
@@ -438,25 +452,36 @@ export class PainelJogos {
    * Subtarefas, critérios de aceite e descrição da US em votação, em abas
    * que cada pessoa abre e fecha para si (vem do kanban do GitHub).
    */
-  #detalhes(hid, det) {
+  #detalhes(hid, det, filhas = []) {
     const abas = [];
     const { subtarefas: s, criterios: c } = det;
     const linha = (feito, filhos) => el("li", { class: feito ? "is-feito" : "" }, [icon(feito ? "check" : "circle", { size: "sm", label: feito ? "Feito" : "Aberto" }), ...filhos]);
     const resto = (n, oQue) => (n ? el("li.poker__mais", { text: `e mais ${n} ${oQue} no GitHub` }) : null);
     if (s.itens.length) {
+      // A subtarefa que também está na mesa: a nota dela, e um clique para votar.
+      const naMesa = (t) => (t.url ? filhas.find((f) => f.gh?.url === t.url) : null);
+      const pontos = filhas.map((f) => numero(String(f.estimativa ?? ""))).filter((n) => n != null);
+      const soma = pontos.length ? Math.round(pontos.reduce((a, b) => a + b, 0) * 10) / 10 : null;
       abas.push({
         id: "subtarefas",
         nome: "Subtarefas",
         conta: `${s.feitas}/${s.itens.length + s.mais}`,
         corpo: () =>
           el("ul.poker__check", {}, [
-            ...s.itens.map((t) =>
-              linha(t.feita, [
+            ...s.itens.map((t) => {
+              const f = naMesa(t);
+              return linha(t.feita, [
                 t.url ? el("a.poker__num", { href: t.url, target: "_blank", rel: "noopener noreferrer", text: t.numero ? `#${t.numero}` : "abrir" }) : null,
-                el("span", { text: t.titulo }),
-              ]),
-            ),
+                el("span.poker__checkTxt", { text: t.titulo }),
+                f
+                  ? el("button.poker__votarSub", { type: "button", class: f.estimativa != null ? "is-estimada" : "", "aria-label": f.estimativa != null ? `${t.titulo}: ${f.estimativa}. Votar de novo` : `Votar: ${t.titulo}`, onClick: () => this.o.poker.escolherHistoria(f.id) }, [
+                      el("span", { text: f.estimativa ?? "Votar" }),
+                    ])
+                  : null,
+              ]);
+            }),
             resto(s.mais, "subtarefas"),
+            soma != null ? el("li.poker__soma", {}, [el("span", { text: "Soma das subtarefas" }), el("strong", { text: String(soma).replace(".", ",") })]) : null,
           ]),
       });
     }
@@ -498,6 +523,17 @@ export class PainelJogos {
     }
     mostrar();
     return caixa;
+  }
+
+  /** Tipo, etiquetas e responsáveis da issue, como no GitHub (a cor é só a bolinha). */
+  #marcas(m) {
+    if (!m || (!m.tipo && !m.etiquetas.length && !m.pessoas.length)) return null;
+    const bolinha = (cor) => el("span.poker__bolinha", { "aria-hidden": "true", style: cor ? { "--cor": `#${cor}` } : {} });
+    return el("div.poker__marcas", {}, [
+      m.tipo ? el("span.poker__marca.poker__marca--tipo", { title: "Tipo" }, [bolinha(m.tipo.cor), el("span", { text: m.tipo.nome })]) : null,
+      ...m.etiquetas.map((e) => el("span.poker__marca", { title: "Etiqueta" }, [bolinha(e.cor), el("span", { text: e.nome })])),
+      m.pessoas.length ? el("span.poker__marca.poker__marca--pessoas", { title: "Responsáveis" }, [icon("gh-people", { size: "sm" }), el("span", { text: m.pessoas.map((x) => `@${x}`).join(", ") })]) : null,
+    ]);
   }
 
   #centro(v, votos, souEspectador) {

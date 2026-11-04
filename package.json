@@ -1,6 +1,6 @@
 {
   "name": "vcall",
-  "version": "3.19.0",
+  "version": "3.20.0",
   "private": true,
   "type": "module",
   "description": "Salas de vídeo P2P criptografadas fim a fim, com canvas colaborativo infinito, painel de chamadas ativas e aplicativo desktop.",
@@ -38,6 +38,7 @@
     "@dicebear/core": "^9.0.0",
     "@huggingface/transformers": "^4.3.0",
     "@iconify-json/fluent-emoji-flat": "^1.2.6",
+    "@iconify-json/octicon": "^1.2.40",
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "@ricky0123/vad-web": "^0.0.31",
     "electron": "^44.5.1",

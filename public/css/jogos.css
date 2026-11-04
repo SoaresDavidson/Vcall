@@ -276,11 +276,72 @@
   font-size: var(--text-lg);
 }
 .poker__card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .poker__card:hover {
   color: var(--text);
+}
+.poker__de {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(520px, 100%);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+/* O link do card e o "Dividir", lado a lado embaixo do título. */
+.poker__gh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1) var(--sp-3);
+}
+.poker__dividir {
+  min-height: 28px;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-xs);
+  border: 1px dashed var(--border-strong);
+}
+/* Tipo, etiquetas e responsáveis: neutros, a cor do GitHub só na bolinha. */
+.poker__marcas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin: 2px 0;
+}
+.poker__marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.poker__marca--tipo {
+  font-weight: var(--weight-medium);
+}
+.poker__marca--pessoas {
+  border-style: dashed;
+}
+.poker__bolinha,
+.gh__bolinha {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cor, var(--text-muted));
 }
 
 /* Detalhes da US do GitHub: subtarefas, critérios e descrição em abas. */
@@ -373,6 +434,38 @@
 .poker__mais {
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+.poker__checkTxt {
+  flex: 1;
+  min-width: 0;
+}
+/* Na aba de subtarefas: a nota de quem está na mesa, ou "Votar". */
+.poker__votarSub {
+  flex: none;
+  align-self: center;
+  min-width: 28px;
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.poker__votarSub:hover {
+  background: var(--accent-soft);
+}
+.poker__votarSub.is-estimada {
+  background: var(--accent);
+  color: #fff;
+}
+.poker__check .poker__soma {
+  justify-content: space-between;
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
 }
 .poker__desc {
   font-size: var(--text-sm);
@@ -719,6 +812,250 @@
 .gh__campo {
   min-height: 40px;
 }
+.gh__marca {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--text);
+}
+.gh__opcoesPe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+}
+.gh__outra {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.gh__outra input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* 4. Dividir: como a página de nova issue do GitHub, texto à esquerda e o resto ao lado. */
+.modal.gh--dividir {
+  max-width: min(820px, calc(100vw - var(--sp-8)));
+}
+.gh--dividir .gh__corpo {
+  max-height: min(70vh, 640px);
+}
+.gh__pai {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+.gh__pai > .icon {
+  color: var(--text-muted);
+}
+.gh__pai > .muted {
+  flex: none;
+  white-space: nowrap;
+}
+.gh__repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 40%;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.gh__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: var(--sp-6);
+  align-items: start;
+}
+.gh__principal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.gh__rotulo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.gh__rotulo .row {
+  align-items: center;
+}
+.gh__desc {
+  min-height: 160px;
+  padding-block: var(--sp-2);
+  resize: vertical;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.gh__mini {
+  min-height: 28px;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-xs);
+}
+.gh__lado {
+  display: flex;
+  flex-direction: column;
+}
+.gh__campoLado {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+  font-size: var(--text-sm);
+}
+.gh__campoLado + .gh__campoLado {
+  border-top: 1px solid var(--border-subtle);
+}
+.gh__lado .gh__campoLado:first-child {
+  padding-top: 0;
+}
+.gh__secao {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.gh__secao .icon {
+  color: var(--text-muted);
+}
+/* A lista abre por cima, sem empurrar o resto (senão o clique seguinte cai em outro lugar). */
+.gh__seletor {
+  position: relative;
+}
+.gh__seletor summary {
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.gh__seletor summary::-webkit-details-marker {
+  display: none;
+}
+.gh__seletor summary:hover {
+  color: var(--accent);
+}
+.gh__seletor[open] .gh__seta {
+  transform: rotate(180deg);
+}
+.gh__pop {
+  position: absolute;
+  inset: calc(100% + 6px) 0 auto;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+.gh__opcoes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.gh__opcao {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.gh__opcao:hover {
+  background: var(--surface-2);
+}
+.gh__opcao input {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+.gh__opcaoTxt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gh__opcaoTxt .muted {
+  font-size: var(--text-xs);
+}
+.gh__escolhidos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: var(--text-xs);
+}
+.gh__escolhido {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+}
+.gh__sub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+}
+.gh__lado select.input {
+  min-height: 36px;
+  font-size: var(--text-sm);
+}
+.gh__criadas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--text-sm);
+}
+.gh__criadas:empty {
+  display: none;
+}
+.gh__criadas li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md);
+  background: var(--ok-soft, var(--surface-2));
+}
+.gh__criadas .icon {
+  color: var(--ok);
+}
+.gh--dividir .gh__pe {
+  align-items: center;
+}
+@media (max-width: 680px) {
+  .gh__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gh__repo {
+    display: none;
+  }
+}
 .poker__fila {
   display: flex;
   flex-wrap: wrap;
@@ -921,6 +1258,30 @@
 }
 .poker__itemBtn:hover {
   background: var(--surface-hover);
+}
+.poker__itemBtn .truncate {
+  flex: 1;
+}
+/* Subtarefas logo abaixo da US, recuadas e um tom abaixo. */
+.poker__item.is-sub {
+  margin-left: calc(var(--nivel, 1) * 14px);
+}
+.poker__item.is-sub .poker__itemBtn {
+  padding-block: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.poker__item.is-sub.is-atual .poker__itemBtn {
+  color: var(--text);
+}
+.poker__subIco {
+  color: var(--text-muted);
+}
+.poker__ghNum {
+  flex: none;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
 .poker__estimativa {
   flex: none;

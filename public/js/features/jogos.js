@@ -328,9 +328,11 @@ export function historiaAtual(estado) {
  * outro participante: o link só passa se for mesmo do github.com.
  */
 function cardGithub(gh) {
-  if (!gh || typeof gh.item !== "string") return null;
+  const id = (v) => (typeof v === "string" && v ? v.slice(0, 100) : null);
+  if (!gh || !(id(gh.item) || id(gh.conteudo))) return null;
   return {
-    item: gh.item.slice(0, 100),
+    item: id(gh.item),
+    conteudo: id(gh.conteudo),
     numero: Number.isSafeInteger(gh.numero) ? gh.numero : null,
     url: linkGithub(gh.url),
   };
@@ -346,12 +348,22 @@ const txt = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
  */
 const LIMITE_DETALHE = 3900;
 const tamanho = (v) => JSON.stringify(v).length;
+const corOk = (c) => (typeof c === "string" && /^[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null);
+
+/** Etiquetas, responsáveis e tipo, curtos (`et`, `pe`, `ti` em `p/hd/<id>`). */
+function pacoteMarcas(m) {
+  const et = (m?.etiquetas || []).slice(0, 8).map((e) => ({ n: String(e.nome).slice(0, 40), c: corOk(e.cor) }));
+  const pe = (m?.pessoas || []).slice(0, 6).map((x) => String(x).slice(0, 39));
+  const ti = m?.tipo?.nome ? { n: String(m.tipo.nome).slice(0, 30), c: corOk(m.tipo.cor) } : null;
+  return et.length || pe.length || ti ? { et, pe, ti } : null;
+}
 
 function pacoteDetalhes(id, x) {
   const pares = [];
   const itensCheck = (x.criterios?.itens || []).slice(0, 20).map((c) => ({ t: String(c.titulo).slice(0, 220), f: !!c.feito }));
-  if (x.descricao || itensCheck.length) {
-    const d = { t: String(x.descricao || "").slice(0, 1600), cn: String(x.criterios?.nome || "").slice(0, 60), c: itensCheck };
+  const marcas = pacoteMarcas(x.marcas);
+  if (x.descricao || itensCheck.length || marcas) {
+    const d = { t: String(x.descricao || "").slice(0, 1600), cn: String(x.criterios?.nome || "").slice(0, 60), c: itensCheck, ...marcas };
     while (d.c.length > 3 && tamanho(d) > LIMITE_DETALHE) d.c.pop();
     while (d.t && tamanho(d) > LIMITE_DETALHE) d.t = `${d.t.slice(0, Math.floor(d.t.length * 0.85))}…`;
     while (tamanho(d) > LIMITE_DETALHE) d.c.pop();
@@ -375,22 +387,59 @@ export function detalhesHistoria(estado, hid) {
   const subtarefas = lista(s.s).map((x) => ({ titulo: txt(x.t, 160), numero: Number.isSafeInteger(x.n) ? x.n : null, url: linkGithub(x.u), feita: x.f === true }));
   const criterios = lista(d.c).map((x) => ({ titulo: txt(x.t, 220), feito: x.f === true }));
   const mais = (v) => (Number.isSafeInteger(v) && v > 0 ? v : 0);
+  const marca = (x) => ({ nome: txt(x?.n, 40), cor: corOk(x?.c) });
   return {
     descricao: txt(d.t, 1700),
+    marcas: {
+      etiquetas: lista(d.et).map(marca).filter((e) => e.nome),
+      pessoas: (Array.isArray(d.pe) ? d.pe : []).filter((x) => typeof x === "string" && /^[A-Za-z0-9-]{1,39}$/.test(x)),
+      tipo: d.ti && typeof d.ti === "object" && txt(d.ti.n, 30) ? marca(d.ti) : null,
+    },
     criterios: { nome: txt(d.cn, 60) || "Checklist", itens: criterios, mais: mais(d.cm) },
     subtarefas: { itens: subtarefas, mais: mais(s.m), feitas: subtarefas.filter((x) => x.feita).length },
     vazio: !d.t && !criterios.length && !subtarefas.length,
+    semMarcas: !lista(d.et).length && !(Array.isArray(d.pe) && d.pe.length) && !d.ti,
   };
 }
 
-/** Histórias, na ordem. */
+/**
+ * Histórias, na ordem, com as subtarefas logo abaixo de quem as tem (`pai`)
+ * e o `nivel` de cada uma (0 na US).
+ */
 export function historias(estado) {
-  const lista = [];
+  const todas = new Map();
   for (const [k, h] of estado.com("p/h/")) {
     if (h?.apagada) continue;
-    lista.push({ id: k.slice(4), titulo: String(h.titulo || "").slice(0, 200), ordem: Number(h.ordem) || 0, estimativa: h.estimativa ?? null, gh: cardGithub(h.gh) });
+    const id = k.slice(4);
+    todas.set(id, { id, titulo: String(h.titulo || "").slice(0, 200), ordem: Number(h.ordem) || 0, estimativa: h.estimativa ?? null, gh: cardGithub(h.gh), pai: typeof h.pai === "string" && h.pai !== id ? h.pai : null, nivel: 0 });
   }
-  return lista.sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
+  const filhas = new Map();
+  for (const h of todas.values()) {
+    if (!todas.has(h.pai)) h.pai = null; // a de cima foi apagada: sobe
+    const irmas = filhas.get(h.pai) || [];
+    irmas.push(h);
+    filhas.set(h.pai, irmas);
+  }
+  const ordem = (a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id);
+  const lista = [];
+  const vistas = new Set();
+  const descer = (pai, nivel) => {
+    for (const h of (filhas.get(pai) || []).sort(ordem)) {
+      if (vistas.has(h.id)) continue;
+      vistas.add(h.id);
+      lista.push({ ...h, nivel });
+      descer(h.id, nivel + 1);
+    }
+  };
+  descer(null, 0);
+  // Um ciclo (a dentro de b dentro de a, vindo de fora) não esconde ninguém.
+  for (const h of [...todas.values()].sort(ordem)) {
+    if (vistas.has(h.id)) continue;
+    vistas.add(h.id);
+    lista.push({ ...h, pai: null, nivel: 0 });
+    descer(h.id, 1);
+  }
+  return lista;
 }
 
 /**
@@ -507,20 +556,25 @@ export class Poker {
 
   /**
    * `titulos`: textos, ou objetos vindos do kanban do GitHub (features/github.js):
-   * `{ titulo, estimativa, gh, descricao, criterios, subtarefas, subtarefasTotal }`.
+   * `{ titulo, estimativa, gh, descricao, criterios, marcas, subtarefas, subtarefasTotal, filhas }`.
+   * `filhas` entram como subtarefas votáveis, logo abaixo (até 30 por US).
+   * `pai`: põe todas embaixo de uma história que já está na mesa.
    */
-  adicionarHistorias(titulos) {
+  adicionarHistorias(titulos, { pai = null } = {}) {
     const atuais = historias(this.estado);
     let ordem = atuais.length ? Math.max(...atuais.map((h) => h.ordem)) + 1 : 1;
     const pares = [];
     let primeira = null;
-    const novas = titulos.map((x) => (typeof x === "object" && x ? x : { titulo: x })).filter((x) => String(x.titulo ?? "").trim());
-    for (const x of novas.slice(0, 50)) {
+    const objeto = (x) => (typeof x === "object" && x ? x : { titulo: x });
+    const temTitulo = (x) => String(x.titulo ?? "").trim();
+    const por = (x, acima) => {
       const id = novoId();
       const estimativa = x.estimativa ?? null;
       if (estimativa == null) primeira ||= id;
-      pares.push([`p/h/${id}`, { titulo: String(x.titulo).trim().slice(0, 200), ordem: ordem++, estimativa, ...(x.gh ? { gh: x.gh } : {}) }], ...pacoteDetalhes(id, x));
-    }
+      pares.push([`p/h/${id}`, { titulo: String(x.titulo).trim().slice(0, 200), ordem: ordem++, estimativa, ...(acima ? { pai: acima } : {}), ...(x.gh ? { gh: x.gh } : {}) }], ...pacoteDetalhes(id, x));
+      for (const f of (x.filhas || []).map(objeto).filter(temTitulo).slice(0, 30)) por(f, id);
+    };
+    for (const x of titulos.map(objeto).filter(temTitulo).slice(0, 50)) por(x, pai);
     // Sem história em votação: a primeira nova vira a atual.
     if (primeira && historiaAtual(this.estado) === "_") pares.push(["p/atual", primeira]);
     // Em pedaços que cabem no canal: com descrições, 50 histórias passam de 100 kB.
@@ -538,17 +592,44 @@ export class Poker {
     if (!h) return;
     const pares = [[`p/h/${hid}`, { ...h, estimativa: carta }]];
     if (avancar) {
-      const proxima = historias(this.estado).find((x) => x.id !== hid && x.estimativa == null);
+      // A seguinte sem estimativa (a subtarefa logo abaixo da US), dando a volta no fim.
+      const lista = historias(this.estado);
+      const i = lista.findIndex((x) => x.id === hid);
+      const proxima = [...lista.slice(i + 1), ...lista.slice(0, Math.max(i, 0))].find((x) => x.id !== hid && x.estimativa == null);
       if (proxima) pares.push(["p/atual", proxima.id]);
     }
     this.estado.definir(pares);
   }
 
+  /**
+   * Uma subtarefa nova embaixo de `hid` (a US que ficou grande e foi
+   * dividida): entra na mesa e na lista de subtarefas da US.
+   */
+  adicionarSubtarefa(hid, x) {
+    const id = this.adicionarHistorias([x], { pai: hid });
+    const s = this.estado.ler(`p/hs/${hid}`) || {};
+    const lista = Array.isArray(s.s) ? s.s.filter((t) => t?.u !== x.gh?.url) : [];
+    const nova = { s: [...lista, { t: String(x.titulo).slice(0, 160), n: Number.isSafeInteger(x.gh?.numero) ? x.gh.numero : null, u: linkGithub(x.gh?.url), f: false }], m: Number.isSafeInteger(s.m) ? s.m : 0 };
+    while (nova.s.length > 1 && tamanho(nova) > LIMITE_DETALHE) {
+      nova.s.shift();
+      nova.m += 1;
+    }
+    this.estado.definir([[`p/hs/${hid}`, nova]]);
+    return id;
+  }
+
+  /** Apaga a história e as subtarefas dela. */
   apagarHistoria(hid) {
-    const h = this.estado.ler(`p/h/${hid}`);
-    if (!h) return;
-    const pares = [[`p/h/${hid}`, { ...h, apagada: true }]];
-    if (historiaAtual(this.estado) === hid) pares.push(["p/atual", "_"]);
+    const todas = historias(this.estado);
+    const fora = new Set([hid]);
+    for (const h of todas) if (h.pai && fora.has(h.pai)) fora.add(h.id); // em árvore: a de cima vem antes
+    const pares = [];
+    for (const id of fora) {
+      const h = this.estado.ler(`p/h/${id}`);
+      if (h) pares.push([`p/h/${id}`, { ...h, apagada: true }]);
+    }
+    if (!pares.length) return;
+    if (fora.has(historiaAtual(this.estado))) pares.push(["p/atual", "_"]);
     this.estado.definir(pares);
   }
 

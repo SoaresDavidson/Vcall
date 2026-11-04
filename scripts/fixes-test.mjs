@@ -839,63 +839,136 @@ server.close();
   assert.equal(resultado(["M", "G", "M"], BARALHOS.camisetas).maioria, "M");
   assert.equal(resultado(["½", "1"], BARALHOS.modificado).media, 0.8);
 
-  // Kanban do GitHub: as US marcadas entram uma vez só, com descrição, critérios e subtarefas, e cada estimativa vai para o card uma vez, pelo computador de quem importou.
+  // Kanban do GitHub: as US marcadas entram uma vez só, com descrição, critérios, etiquetas e subtarefas; as subtarefas abertas viram itens votáveis logo abaixo; cada estimativa vai para o card uma vez, pelo computador de quem importou; e uma US grande se divide em sub-issues novas.
   {
     const gravados = [];
+    const criados = [];
+    const gh = (n) => `https://github.com/acme/app/issues/${n}`;
     const cards = [
-      { item: "PVTI_1", titulo: "US12 — Pagar com Pix", numero: 12, url: "https://github.com/acme/app/issues/12", coluna: "c1", estimativa: null, subs: { total: 2, feitas: 1 } },
-      { item: "PVTI_2", titulo: "Exportar PDF", numero: 13, url: "https://github.com/acme/app/issues/13", coluna: "c1", estimativa: 3, subs: null },
+      { item: "PVTI_1", conteudo: "I_12", titulo: "US12 — Pagar com Pix", numero: 12, url: gh(12), coluna: "c1", estimativa: null, subs: { total: 3, feitas: 1 } },
+      { item: "PVTI_2", conteudo: "I_13", titulo: "Exportar PDF", numero: 13, url: gh(13), coluna: "c1", estimativa: 3, subs: null },
+      // A sub-issue #42 também é card (com estimativa e outra coluna): vem com a US e usa o card dela.
+      { item: "PVTI_42", conteudo: "I_42", titulo: "[US12] Webhook", numero: 42, url: gh(42), coluna: "c2", estimativa: 2, subs: null, pai: gh(12) },
     ];
     const longo = "x".repeat(300);
     const detalhes = {
       PVTI_1: {
         corpo: "**Descrição**\nComo cliente, quero pagar com Pix.\n\n**Critérios de aceite**\n- [ ] QR na tela\n- [x] Confirma em [10 s](https://x.y)\n",
+        marcas: { etiquetas: [{ nome: "pagamentos", cor: "0E8A16" }, { nome: "x", cor: "red;}" }], pessoas: ["ana", "<b>"], tipo: { nome: "Feature", cor: "a2eeef" } },
         subs: [
-          { titulo: "[US12] Criar cobrança", numero: 40, url: "https://github.com/acme/app/issues/40", feita: true },
-          { titulo: "Tela do QR", numero: 41, url: "javascript:alert(1)", feita: false },
+          { conteudo: "I_40", titulo: "[US12] Criar cobrança", numero: 40, url: gh(40), feita: true, corpo: "" },
+          { conteudo: "I_41", titulo: "Tela do QR", numero: 41, url: "javascript:alert(1)", feita: false, corpo: "Mostrar o QR.\n\n## Critérios\n- [ ] Some em 5 min" },
+          { conteudo: "I_42", titulo: "[US12] Webhook", numero: 42, url: gh(42), feita: false, corpo: "" },
         ],
-        subsTotal: 2,
+        subsTotal: 3,
       },
       // Muita coisa: tem de caber no limite de um valor do estado em vez de a história sumir.
-      PVTI_2: { corpo: `${longo}\n${Array.from({ length: 20 }, (_, i) => `- [ ] critério ${i} ${longo}`).join("\n")}`, subs: Array.from({ length: 30 }, (_, i) => ({ titulo: `sub ${i} ${longo}`, numero: 100 + i, url: `https://github.com/acme/app/issues/${100 + i}`, feita: false })), subsTotal: 45 },
+      PVTI_2: { corpo: `${longo}\n${Array.from({ length: 20 }, (_, i) => `- [ ] critério ${i} ${longo}`).join("\n")}`, subs: Array.from({ length: 30 }, (_, i) => ({ conteudo: `I_${100 + i}`, titulo: `sub ${i} ${longo}`, numero: 100 + i, url: gh(100 + i), feita: true, corpo: "" })), subsTotal: 45 },
     };
-    const ponte = async (acao, d) => (acao === "cards" ? cards : acao === "detalhes" ? Object.fromEntries(d.itens.map((i) => [i, detalhes[i]])) : (gravados.push(d), true));
+    const ponte = async (acao, d) => {
+      if (acao === "cards") return cards;
+      if (acao === "detalhes") return Object.fromEntries(d.itens.map((i) => [i, detalhes[i]]));
+      if (acao === "estimar") return gravados.push(d), { item: d.item || `PVTI_de_${d.conteudo}` };
+      if (acao === "repositorio") return { id: "R_1", nome: "acme/app", pai: { numero: 12, titulo: "US12", marco: null }, pessoas: [], etiquetas: [], marcos: [], tipos: [] };
+      if (acao === "criar") return criados.push(d), { conteudo: "I_77", numero: 77, url: gh(77), titulo: d.titulo, item: "PVTI_77", aviso: null };
+      throw new Error(acao);
+    };
+    const passa = () => new Promise((ok) => setTimeout(ok, 0));
     const kg = new KanbanGithub(nos[0], pk[0], ponte);
-    const projeto = { id: "PVT_x", status: { nome: "Status", colunas: [{ id: "c1", nome: "Todo" }] }, numeros: [{ id: "F_est", nome: "Estimativa" }] };
-    const r = await kg.importar(projeto, cards, { campo: projeto.numeros[0] });
+    const projeto = { id: "PVT_x", titulo: "Sprint", status: { id: "F_st", nome: "Status", colunas: [{ id: "c1", nome: "Todo" }, { id: "c2", nome: "Doing" }] }, numeros: [{ id: "F_est", nome: "Estimativa" }] };
+    const r = await kg.importar(projeto, cards.slice(0, 2), { campo: projeto.numeros[0], todos: cards });
     assert.deepEqual([r.novos, r.faltam], [2, 0]);
     entregar();
-    assert.equal((await kg.importar(projeto, cards, { campo: projeto.numeros[0] })).novos, 0, "importar de novo não repete cards");
+    assert.equal((await kg.importar(projeto, cards.slice(0, 2), { campo: projeto.numeros[0], todos: cards })).novos, 0, "importar de novo não repete cards");
     const doGh = historias(nos[2]).filter((h) => h.gh);
-    assert.deepEqual(doGh.map((h) => [h.titulo, h.estimativa, h.gh.numero, h.gh.url]), [
-      ["US12 — Pagar com Pix", null, 12, "https://github.com/acme/app/issues/12"],
-      ["Exportar PDF", "3", 13, "https://github.com/acme/app/issues/13"],
-    ]);
-    const d1 = detalhesHistoria(nos[2], doGh[0].id);
+    assert.deepEqual(doGh.map((h) => [h.titulo, h.nivel, h.estimativa, h.gh.numero, h.gh.url]), [
+      ["US12 — Pagar com Pix", 0, null, 12, gh(12)],
+      ["Tela do QR", 1, null, 41, null],
+      ["Webhook", 1, "2", 42, gh(42)],
+      ["Exportar PDF", 0, "3", 13, gh(13)],
+    ], "as subtarefas abertas entram logo abaixo da US (a fechada não), e a que é card traz a estimativa dele");
+    const [us12, qr, webhook] = doGh;
+    assert.ok(qr.pai === us12.id && webhook.pai === us12.id);
+    const d1 = detalhesHistoria(nos[2], us12.id);
     assert.equal(d1.descricao, "Como cliente, quero pagar com Pix.", "a descrição sem o título e sem a checklist");
     assert.deepEqual([d1.criterios.nome, d1.criterios.itens], ["Critérios de aceite", [{ titulo: "QR na tela", feito: false }, { titulo: "Confirma em 10 s", feito: true }]]);
     assert.deepEqual(d1.subtarefas.itens.map((t) => [t.titulo, t.numero, t.url, t.feita]), [
-      ["Criar cobrança", 40, "https://github.com/acme/app/issues/40", true],
+      ["Criar cobrança", 40, gh(40), true],
       ["Tela do QR", 41, null, false],
+      ["Webhook", 42, gh(42), false],
     ], "a etiqueta [US12] sai e um link que não é do GitHub não passa");
-    const d2 = detalhesHistoria(nos[2], doGh[1].id);
+    assert.deepEqual(d1.marcas, { etiquetas: [{ nome: "pagamentos", cor: "0e8a16" }, { nome: "x", cor: null }], pessoas: ["ana"], tipo: { nome: "Feature", cor: "a2eeef" } }, "cor e login esquisitos não passam");
+    const dq = detalhesHistoria(nos[2], qr.id);
+    assert.deepEqual([dq.descricao, dq.criterios.itens.map((c) => c.titulo)], ["Mostrar o QR.", ["Some em 5 min"]], "a subtarefa traz a descrição dela");
+    const d2 = detalhesHistoria(nos[2], doGh[3].id);
     assert.ok(d2.subtarefas.itens.length > 5 && d2.subtarefas.itens.length + d2.subtarefas.mais === 45, "subtarefas cortadas para caber, com a conta do resto");
     assert.ok(d2.criterios.itens.length >= 3 && d2.criterios.itens.length + d2.criterios.mais === 20, "critérios cortados para caber, com a conta do resto");
-    pk[1].salvarEstimativa(doGh[0].id, "8"); // outra pessoa salva
+
+    pk[1].salvarEstimativa(us12.id, "8"); // outra pessoa salva
     entregar();
-    await new Promise((ok) => setTimeout(ok, 0));
-    assert.deepEqual(gravados, [{ projeto: "PVT_x", item: "PVTI_1", campo: "F_est", numero: 8 }], "quem importou grava o 8 no card");
+    await passa();
+    assert.deepEqual(gravados, [{ projeto: "PVT_x", item: "PVTI_1", conteudo: "I_12", campo: "F_est", numero: 8, coluna: { campo: "F_st", opcao: "c1" } }], "quem importou grava o 8 no card");
+    assert.equal(mesaPoker(nos[2], { pessoas }).historia, qr.id, "salvar a US passa para a subtarefa dela");
+    pk[2].salvarEstimativa(qr.id, "5");
+    entregar();
+    await passa();
+    assert.deepEqual(gravados[1], { projeto: "PVT_x", item: null, conteudo: "I_41", campo: "F_est", numero: 5, coluna: { campo: "F_st", opcao: "c1" } }, "a subtarefa fora do quadro entra nele, na coluna da US");
+    pk[2].salvarEstimativa(qr.id, "3");
+    entregar();
+    await passa();
+    assert.equal(gravados[2].item, "PVTI_de_I_41", "e da segunda vez já usa o card dela");
+    pk[0].salvarEstimativa(webhook.id, "5");
+    entregar();
+    await passa();
+    assert.deepEqual([gravados[3].item, gravados[3].coluna.opcao], ["PVTI_42", "c2"], "a subtarefa que é card grava no card dela");
     pk[2].votar("1");
     entregar();
-    await new Promise((ok) => setTimeout(ok, 0));
-    assert.equal(gravados.length, 1, "o que já foi gravado não vai de novo a cada mudança da mesa");
+    await passa();
+    assert.equal(gravados.length, 4, "o que já foi gravado não vai de novo a cada mudança da mesa");
     pk[2].votar(null);
     entregar();
-    // Um link vindo de outro participante só aparece se for do github.com.
-    nos[1].definir([["p/h/zz", { titulo: "x", ordem: 99, gh: { item: "i", url: "javascript:alert(1)" } }]]);
-    assert.equal(historias(nos[1]).find((h) => h.id === "zz").gh.url, null);
+
+    // Ninguém na chamada aponta outra issue: um card inventado no estado não é gravado nem dividido.
+    nos[1].definir([["p/h/zz", { titulo: "x", ordem: 99, estimativa: "8", gh: { item: "PVTI_999", conteudo: "I_999", url: "javascript:alert(1)" } }]]);
+    entregar();
+    await passa();
+    const zz = historias(nos[1]).find((h) => h.id === "zz");
+    assert.equal(zz.gh.url, null, "um link vindo de outro participante só aparece se for do github.com");
+    assert.equal(gravados.length, 4);
+    assert.ok(kg.podeDividir(us12) && kg.podeDividir(qr) && !kg.podeDividir(zz));
+    assert.ok(!new KanbanGithub(nos[1], pk[1], ponte).podeDividir(us12), "só quem trouxe a US divide");
     pk[1].apagarHistoria("zz");
     entregar();
+
+    // Dividir: a sub-issue nasce no GitHub embaixo da US, já no quadro, e entra na mesa logo abaixo.
+    const f = await kg.formulario(us12);
+    assert.deepEqual([f.repo.nome, f.coluna, f.cartas.join(" ")], ["acme/app", "c1", "0 1 2 3 5 8 13 21 34 55 89"]);
+    const nova = await kg.criarSubtarefa(
+      us12,
+      { repositorio: "R_1", titulo: "Recibo por e-mail", corpo: "Mandar o recibo.\n\n## Critérios de aceite\n- [ ] Chega em 1 min", pessoas: ["U_1"], etiquetas: ["L_1"], marco: "", tipo: "", coluna: "c2", estimativa: "5" },
+      { etiquetas: [{ nome: "pagamentos", cor: "0e8a16" }], pessoas: ["ana"], tipo: null },
+    );
+    assert.equal(nova.numero, 77);
+    assert.deepEqual(criados, [{ pai: "I_12", repositorio: "R_1", titulo: "Recibo por e-mail", corpo: "Mandar o recibo.\n\n## Critérios de aceite\n- [ ] Chega em 1 min", pessoas: ["U_1"], etiquetas: ["L_1"], marco: null, tipo: null, projeto: "PVT_x", coluna: { campo: "F_st", opcao: "c2" }, estimativa: { campo: "F_est", numero: 5 } }]);
+    entregar();
+    await passa();
+    const arvore = historias(nos[2]);
+    const recibo = arvore.find((h) => h.gh?.numero === 77);
+    assert.deepEqual([recibo.pai, recibo.nivel, recibo.estimativa, arvore.indexOf(recibo) - arvore.findIndex((h) => h.id === us12.id)], [us12.id, 1, "5", 3], "a subtarefa nova vem depois das outras da US");
+    assert.equal(gravados.length, 4, "a estimativa da nova já foi junto ao criar");
+    assert.deepEqual(detalhesHistoria(nos[2], recibo.id).criterios.itens.map((c) => c.titulo), ["Chega em 1 min"]);
+    assert.deepEqual(detalhesHistoria(nos[2], recibo.id).marcas.etiquetas, [{ nome: "pagamentos", cor: "0e8a16" }]);
+    assert.deepEqual(detalhesHistoria(nos[2], us12.id).subtarefas.itens.map((t) => t.numero), [40, 41, 42, 77], "e aparece na aba de subtarefas da US");
+
+    // Apagar a US leva as subtarefas junto; um ciclo vindo de fora não some com ninguém nem trava.
+    pk[0].apagarHistoria(us12.id);
+    entregar();
+    assert.deepEqual(historias(nos[1]).filter((h) => h.gh).map((h) => h.titulo), ["Exportar PDF"]);
+    nos[1].definir([["p/h/ca", { titulo: "a", ordem: 1, pai: "cb" }], ["p/h/cb", { titulo: "b", ordem: 2, pai: "ca" }]]);
+    assert.deepEqual(historias(nos[1]).filter((h) => h.id === "ca" || h.id === "cb").map((h) => [h.id, h.nivel]), [["ca", 0], ["cb", 1]]);
+    pk[1].apagarHistoria("ca");
+    entregar();
+    assert.ok(!historias(nos[0]).some((h) => h.id === "ca" || h.id === "cb"));
   }
 
   // Retrospectiva: notas escondidas enquanto se escreve, 3 pontos por pessoa.
