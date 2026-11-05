@@ -124,6 +124,9 @@ export class StatsMonitor extends Emitter {
     this.#alvoSom.delete(peerId);
     this.#quadrosTela.delete(peerId);
     this.#budget.delete(peerId);
+    this.#folga60.delete(peerId);
+    this.#lento60.delete(peerId);
+    this.#tenta60Em.delete(peerId);
     this.#ema.delete(peerId);
     this.#history.delete(peerId);
     this.samples.delete(peerId);
@@ -211,6 +214,62 @@ export class StatsMonitor extends Emitter {
     this.#sincronizar(peer, sample);
     await this.#destravar(peer, sample);
     if (this.adaptive) await this.#adapt(peer, sample, budgets, cpu, pares);
+    if (this.adaptive) await this.#camera60(peer, sample, pares);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Câmera a 60 qps, só quando sobra banda
+   * ---------------------------------------------------------------- */
+
+  /**
+   * A câmera sai a 30 qps (tuning.PROFILES.camera): com a banda de uma
+   * internet comum, 60 qps só dividem os bits e borram a imagem. Sobe para
+   * 60 numa chamada a dois, sem tela compartilhada, com câmera que entrega
+   * 60, e quando o encoder já está no teto de 30 com a conexão sobrando
+   * (estimativa de envio ≥ 3,5 Mbps, perda < 1%) por 3 leituras seguidas.
+   * Volta na hora se a estimativa cair abaixo de 2,8 Mbps, a perda passar de
+   * 3% ou o processador não der conta (acusado pelo navegador, ou o encoder
+   * abaixo de 36 qps por 3 leituras: aí só tenta de novo em 2 min). O
+   * Chrome não estima muito acima do que já se envia (~1,5×), por isso o
+   * limiar é perto do teto de 30.
+   */
+  #folga60 = new Map(); // peerId -> leituras seguidas com folga
+  #lento60 = new Map(); // peerId -> leituras seguidas com o encoder abaixo de 60% dos 60 qps
+  #tenta60Em = new Map(); // peerId -> só tenta 60 de novo depois desta hora
+
+  async #camera60(peer, sample, pares) {
+    const out = sample.outbound.cam;
+    const track = peer.tx.cam?.sender?.track;
+    if (!out || !track || track.readyState !== "live") return;
+    // Quanto a câmera captura (getSettings), não o que chega ao encoder: com o
+    // teto de 30 o navegador já entrega só 30, e a estatística da fonte diz 30.
+    const fonte = track.getSettings?.().frameRate ?? 30;
+    const avail = sample.transport.availableOutgoing;
+    const perda = sample.lossSmoothed ?? 0;
+    const podeHaver = pares === 1 && !peer.tx.screen?.sender?.track && fonte >= 50 && avail != null;
+    const cai = !podeHaver || avail < 2_800_000 || perda > 3 || out.cpuShare > 0.3;
+    if (cai) {
+      this.#folga60.set(peer.id, 0);
+      if (peer.camera60) await peer.definirCamera60(false);
+      return;
+    }
+    if (peer.camera60) {
+      // Encoder que não acompanha (VP9 por software numa máquina fraca) sem o
+      // navegador acusar CPU: volta a 30 e espera 2 min para tentar de novo.
+      const lento = out.fps != null && out.fps < 36 ? (this.#lento60.get(peer.id) || 0) + 1 : 0;
+      this.#lento60.set(peer.id, lento);
+      if (lento >= 3) {
+        this.#tenta60Em.set(peer.id, performance.now() + 120_000);
+        this.#folga60.set(peer.id, 0);
+        await peer.definirCamera60(false);
+      }
+      return;
+    }
+    if (performance.now() < (this.#tenta60Em.get(peer.id) || 0)) return;
+    const noTeto = (out.targetBitrate ?? 0) >= PROFILES.camera.maxBitrate * 0.85;
+    const folga = noTeto && avail >= 3_500_000 && perda < 1 ? (this.#folga60.get(peer.id) || 0) + 1 : 0;
+    this.#folga60.set(peer.id, folga);
+    if (folga >= 3) await peer.definirCamera60(true);
   }
 
   /* ---------------------------------------------------------------- *

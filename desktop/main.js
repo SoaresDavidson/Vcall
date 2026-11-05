@@ -32,6 +32,7 @@ import { hostControl } from "./guard.js";
 import { Tunnel } from "./tunnel.js";
 import { LinkTailscale } from "./tailscale.js";
 import { lerTurn, salvarTurn, visaoDoTurn } from "./turn.js";
+import { TRIALS_WEBRTC } from "./webrtc.js";
 import { definirTurnLocal } from "../src/ice.js";
 import { definirSfu } from "../src/sfu.js";
 import { Sfu } from "./sfu.js";
@@ -99,6 +100,8 @@ const origensConfiaveis = new Set();
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
+// FlexFEC no vídeo: perda de pacote sem esperar retransmissão (desktop/webrtc.js).
+app.commandLine.appendSwitch("force-fieldtrials", TRIALS_WEBRTC);
 if (process.platform === "linux") {
   // A captura pelo PipeWire (portal do Wayland) já vem ligada no Electron:
   // o `WebRTCPipeWireCapturer` saiu do Chromium no M133 e não fazia nada.

@@ -31,7 +31,7 @@
  */
 import { Emitter } from "../lib/emitter.js";
 import { jitter } from "../lib/util.js";
-import { ajustarInicioVideo, ajustarOpus, applyProfile, cameraParaSala, preferCodecs, preferRed, PROFILES, screenCodecPreference } from "./tuning.js";
+import { ajustarInicioVideo, ajustarOpus, applyProfile, cameraParaSala, codecDaCamera, preferCodecs, preferRed, PROFILES, screenCodecPreference } from "./tuning.js";
 
 /** Ordem canônica das linhas de mídia. Não altere sem versionar o protocolo. */
 export const ROLES = ["mic", "cam", "screen", "screenAudio"];
@@ -135,6 +135,7 @@ export class Peer extends Emitter {
     this.#mayOffer = !this.#polite;
     this.peerCount = peerCount;
     this.#build(local);
+    this.escolherCodecCamera().catch(() => {});
   }
 
   get polite() {
@@ -322,11 +323,43 @@ export class Peer extends Emitter {
   /** A sala mudou de tamanho (mesh.js): a câmera enviada a este par acompanha. */
   async ajustarCamera(outros) {
     this.peerCount = outros;
+    if (outros > 1) this.#cam60 = false;
+    await this.escolherCodecCamera();
+    await applyProfile(this.tx.cam?.sender, this.#perfilCamera());
+  }
+
+  /** Codec da câmera para esta conexão (tuning.codecDaCamera): muda com o tamanho da sala. */
+  codecCamera = null;
+
+  async escolherCodecCamera() {
+    const codec = await codecDaCamera(this.peerCount);
+    if (codec === this.codecCamera || this.#closed) return;
+    this.codecCamera = codec;
+    await applyProfile(this.tx.cam?.sender, this.#perfilCamera());
+  }
+
+  /** A dois e com banda sobrando, a câmera vai a 60 qps (decidido pelo StatsMonitor). */
+  #cam60 = false;
+
+  get camera60() {
+    return this.#cam60;
+  }
+
+  async definirCamera60(ligar) {
+    ligar = !!ligar && this.peerCount <= 1;
+    if (ligar === this.#cam60) return;
+    this.#cam60 = ligar;
     await applyProfile(this.tx.cam?.sender, this.#perfilCamera());
   }
 
   #perfilCamera() {
-    return { ...PROFILES.camera, ...cameraParaSala(this.peerCount), active: !this.#camPausada && !this.#viaRele.has("cam") };
+    const perfil = { ...PROFILES.camera, ...cameraParaSala(this.peerCount), active: !this.#camPausada && !this.#viaRele.has("cam") };
+    if (this.#cam60) {
+      perfil.maxFramerate = PROFILES.camera.maxFramerateComBanda;
+      perfil.maxBitrate = PROFILES.camera.maxBitrateComBanda;
+    }
+    if (this.codecCamera) perfil.codec = this.codecCamera;
+    return perfil;
   }
 
   /** O perfil de cada linha própria, já com o envio direto desligado se ela vai pelo relé. */

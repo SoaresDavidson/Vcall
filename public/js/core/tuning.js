@@ -34,12 +34,26 @@
  * por degrau (cada um codifica uma cópia por par).
  */
 export const PROFILES = {
-  /** Câmera: rosto em movimento, resolução é negociável. */
+  /**
+   * Câmera: rosto em movimento, resolução é negociável.
+   *
+   * 30 qps, como o Meet e o Zoom. Com a mesma banda, 60 qps dão metade dos
+   * bits a cada quadro: medido (scripts/bench-video.mjs, câmera a 60 qps,
+   * VP9), 720p a 30 deu 38,1 dB de PSNR na internet de casa contra 36,3 a 60,
+   * e na 4G 37,1 contra 33,6 — a 60 a imagem ainda caía para 535p. Quem sobe
+   * para 60 é o StatsMonitor, numa chamada a dois e com banda sobrando
+   * (`maxFramerateComBanda`, até `maxBitrateComBanda`).
+   *
+   * "balanced" ficou: o "maintain-framerate" congelou mais na 4G (3,7 s
+   * contra 2,5 s) e na internet ruim (21 s contra 15 s).
+   */
   camera: {
     contentHint: "motion",
     degradationPreference: "balanced",
-    maxBitrate: 2_000_000,
-    maxFramerate: 60,
+    maxBitrate: 2_500_000,
+    maxFramerate: 30,
+    maxFramerateComBanda: 60,
+    maxBitrateComBanda: 4_000_000,
     priority: "low",
     networkPriority: "low",
   },
@@ -333,6 +347,32 @@ function porHardware(mime) {
   return hardware.get(mime);
 }
 
+/**
+ * O codec da câmera NESTA máquina, para `outros` pessoas recebendo.
+ *
+ * VP9 dá a mesma imagem com uns 30–40% menos bits que o VP8 (o padrão do
+ * navegador). Medido na 4G de mentira (2,5 Mbps, 2% de perda): o VP8 caía
+ * para 479p e 33,6 dB; o VP9 ficou em 720p e 36,9 dB, com menos tempo
+ * congelado. O preço é processador: por software ele custa 2 a 3 vezes o
+ * VP8. Então: VP9 pela placa de vídeo sempre; por software só com 4 núcleos
+ * ou mais, fora do celular, e com no máximo 2 cópias para codificar. Fora
+ * disso fica o VP8 (sempre negociado; trocar volta ao VP8 quando a sala cresce).
+ */
+const ehCelular = () => {
+  const nav = globalThis.navigator;
+  return nav?.userAgentData?.mobile ?? /Android|iPhone|iPad|Mobile/i.test(nav?.userAgent || "");
+};
+
+export async function codecDaCamera(
+  outros,
+  { nucleos = globalThis.navigator?.hardwareConcurrency || 2, celular = ehCelular(), hardware = porHardware, suporta = supportsCodec } = {},
+) {
+  if (!suporta("video/VP9")) return "video/VP8";
+  if (await hardware("video/VP9")) return "video/VP9";
+  if (!celular && nucleos >= 4 && outros <= 2) return "video/VP9";
+  return "video/VP8";
+}
+
 export async function codecDaTela(mode) {
   if (await porHardware("video/AV1")) return "video/AV1";
   if (await porHardware("video/VP9")) return "video/VP9";
@@ -392,6 +432,18 @@ export async function applyProfile(sender, profile, overrides = {}) {
     await sender.setParameters(params);
     return true;
   } catch (err) {
+    // Trocar o codec por setParameters é recente (Chrome 126+); quem não
+    // aceita recusa a chamada inteira, e junto iam o teto de banda e de
+    // quadros. Sem o codec, o resto do perfil ainda vale.
+    if (codec) {
+      delete enc.codec;
+      try {
+        await sender.setParameters(params);
+        return true;
+      } catch {
+        /* cai no aviso abaixo */
+      }
+    }
     // Navegadores divergem sobre o que aceitam aqui; falhar não pode derrubar
     // a chamada — só significa que a trilha vai com os padrões do navegador.
     console.debug("[tuning] setParameters recusado", err?.name || err);
@@ -476,8 +528,8 @@ export function meshBudget(peerCount, { uplink = 8_000_000 } = {}) {
  * num ladrilho de um nono da tela ninguém vê a diferença de 720p para 240p.
  */
 export function cameraParaSala(outros) {
-  // 60 qps só a dois (e só se a câmera der 60): o dobro de quadros por cópia.
-  if (outros <= 1) return { maxBitrate: 2_000_000, scaleResolutionDownBy: 1, maxFramerate: 60 };
+  // 30 qps; a dois o StatsMonitor sobe para 60 quando a banda sobra.
+  if (outros <= 1) return { maxBitrate: 2_500_000, scaleResolutionDownBy: 1, maxFramerate: 30 };
   if (outros <= 3) return { maxBitrate: 600_000, scaleResolutionDownBy: 1.5, maxFramerate: 30 };
   if (outros <= 5) return { maxBitrate: 350_000, scaleResolutionDownBy: 2, maxFramerate: 24 };
   if (outros <= 8) return { maxBitrate: 200_000, scaleResolutionDownBy: 3, maxFramerate: 15 };

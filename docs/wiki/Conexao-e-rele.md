@@ -34,6 +34,22 @@ se houver um configurado, ou por outra pessoa da sala ([relé](#relé-a-sala-se-
   estão calados, e cada pessoa a mais pesa bem menos.
 - **Som da tela em estéreo**, para música e vídeo compartilhados.
 
+## Câmera que aguenta rede ruim
+
+- **Correção de perda (FlexFEC):** entre dois apps de mesa, o vídeo leva
+  pacotes de correção. Um pacote perdido é refeito na hora, em vez de a imagem
+  parar esperando a retransmissão (uma volta inteira pela rede). Com quem entra
+  pelo navegador não há essa correção, e a imagem espera o reenvio.
+- **VP9:** a mesma imagem com uns 30 a 40% menos bits que o VP8. Entra pela
+  placa de vídeo, ou pelo processador com 4 núcleos ou mais, até 2 pessoas
+  recebendo; em salas maiores sem VP9 na placa, fica o VP8.
+- **30 quadros por segundo:** com a mesma banda, cada quadro leva o dobro de
+  bits que a 60. A dois, sem tela compartilhada e com conexão folgada, a
+  câmera sobe para 60 sozinha e volta a 30 quando aperta ou quando o
+  processador não acompanha.
+
+Os números de cada mudança estão nas [Novidades da 3.21](Novidades-3.21).
+
 ## Relé: a sala se ajuda
 
 Com três pessoas ou mais, quem está na chamada vira caminho reserva.

@@ -26,6 +26,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { TRIALS_WEBRTC } from "./webrtc.js";
+
 /**
  * A pasta de perfil do Vcall, separada da do navegador pessoal.
  *
@@ -135,6 +137,8 @@ export function argumentosDaJanela(url, navegador = null) {
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-features=Translate,MediaRouter",
+    // FlexFEC no vídeo (desktop/webrtc.js).
+    `--force-fieldtrials=${TRIALS_WEBRTC}`,
     // Sem isto o Chromium encosta a janela no canto superior esquerdo.
     "--window-position=120,80",
   ];

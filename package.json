@@ -1,6 +1,6 @@
 {
   "name": "vcall",
-  "version": "3.20.0",
+  "version": "3.21.0",
   "private": true,
   "type": "module",
   "description": "Salas de vídeo P2P criptografadas fim a fim, com canvas colaborativo infinito, painel de chamadas ativas e aplicativo desktop.",
@@ -27,6 +27,7 @@
     "test:e2e": "node scripts/e2e.mjs",
     "test:rele": "node scripts/rele-test.mjs",
     "test:turn": "node scripts/turn-test.mjs",
+    "bench:video": "node scripts/bench-video.mjs",
     "test:desktop": "node scripts/desktop-test.mjs"
   },
   "dependencies": {

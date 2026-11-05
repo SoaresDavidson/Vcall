@@ -337,13 +337,29 @@ console.log("✓ voz: FEC e DTX no microfone, estéreo no áudio da tela, o rest
   assert.equal(ajustarInicioVideo(v, 1500), v, "aplicar de novo não duplica");
 
   assert.equal(orcamento(1, { uplink: 3_000_000 }).screen, PROFILES.screenMotion.maxBitrate, "a dois, a estimativa da própria conexão não vira teto");
-  assert.equal(cameraParaSala(1).maxFramerate, 60, "câmera a 60 qps a dois");
-  assert.ok(cameraParaSala(2).maxFramerate <= 30, "com mais gente, a câmera volta a 30");
+  assert.equal(cameraParaSala(1).maxFramerate, 30, "câmera a 30 qps: com a mesma banda, cada quadro tem o dobro de bits");
+  assert.equal(PROFILES.camera.maxFramerateComBanda, 60, "a dois e com banda sobrando, sobe para 60 (stats.js)");
+  assert.ok(PROFILES.camera.maxBitrateComBanda > cameraParaSala(1).maxBitrate, "e ganha mais banda para os 60");
+  assert.ok(cameraParaSala(2).maxFramerate <= 30, "com mais gente, a câmera fica em 30 ou menos");
   assert.equal(cpuCeiling(1, 8).maxFramerate, 120, "a dois, a tela pode ir a 120 qps");
   assert.equal(cpuCeiling(2, 8).maxFramerate, 60, "duas cópias: no máximo 60");
   assert.ok(cpuCeiling(6, 8).maxFramerate <= 24, "CPU apertada: a tela desce");
   assert.equal(PROFILES.screenText.maxFramerate, 60, "texto fica em 60");
   console.log("✓ vídeo: até 120 qps a dois, banda inicial pedida no SDP, e degraus que descem com a sala");
+}
+
+/* -- câmera: VP9 quando a máquina dá conta, VP8 quando não -- */
+{
+  const { codecDaCamera } = await import("../public/js/core/tuning.js");
+  const com = (o) => ({ nucleos: 8, celular: false, hardware: async () => false, suporta: () => true, ...o });
+  assert.equal(await codecDaCamera(1, com()), "video/VP9", "a dois, com 8 núcleos: VP9 por software");
+  assert.equal(await codecDaCamera(2, com()), "video/VP9", "duas cópias ainda cabem");
+  assert.equal(await codecDaCamera(3, com()), "video/VP8", "três cópias por software: VP8, que custa 2–3× menos");
+  assert.equal(await codecDaCamera(5, com({ hardware: async (m) => m === "video/VP9" })), "video/VP9", "com VP9 na placa de vídeo, sempre VP9");
+  assert.equal(await codecDaCamera(1, com({ nucleos: 2 })), "video/VP8", "máquina de 2 núcleos fica no VP8");
+  assert.equal(await codecDaCamera(1, com({ celular: true })), "video/VP8", "celular sem VP9 na placa fica no VP8");
+  assert.equal(await codecDaCamera(1, com({ suporta: () => false })), "video/VP8", "navegador sem VP9");
+  console.log("✓ câmera: VP9 quando a placa ou o processador dão conta, VP8 nos outros casos");
 }
 
 /* -- relé: a sala ajuda quem tem conexão ruim -- */

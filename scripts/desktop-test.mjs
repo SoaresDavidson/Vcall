@@ -198,6 +198,16 @@ try {
   });
   const isolada = await win.evaluate(() => self.crossOriginIsolated);
   check("app isolado (COOP/COEP): o Whisper pode usar vários núcleos", isolada === true);
+
+  // FlexFEC (desktop/webrtc.js): o app oferece correção de perda no vídeo.
+  const flexfec = await win.evaluate(async () => {
+    const pc = new RTCPeerConnection();
+    pc.addTransceiver("video");
+    const o = await pc.createOffer();
+    pc.close();
+    return /flexfec-03\/90000/.test(o.sdp);
+  });
+  check("o app de mesa oferece FlexFEC no vídeo (perda sem esperar retransmissão)", flexfec === true);
   if (!(await win.evaluate(() => window.vcall.media.micEnabled))) await win.keyboard.press("m");
   await win.click('[aria-label="Legendar minha fala"]');
   const inicio = Date.now();
