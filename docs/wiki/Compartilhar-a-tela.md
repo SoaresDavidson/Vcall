@@ -60,8 +60,14 @@ transmissão pela setinha ao lado do botão.
 
 No aplicativo, escolher a janela do YouTube, Twitch, Netflix ou de um player
 de vídeo já liga a **Fluidez**, a menos que você escolha a prioridade à mão.
+Para o resto (um jogo, um vídeo no meio de uma página), a Nitidez passa
+sozinha para a Fluidez quando a imagem não para e começa a engasgar, e o
+Vcall avisa. Escolhida à mão, a prioridade não muda.
 Não minimize a janela compartilhada: o Windows não captura janela minimizada,
 e a imagem congela para quem assiste. Se isso acontecer, o Vcall avisa.
+
+Sem codificador de vídeo na placa, a Fluidez usa o VP9 pelo processador:
+em 1080p se o computador tem 8 threads ou mais e dá conta, senão em 720p.
 
 Na Fluidez a janela é capturada no tamanho dela (até 1440p), e quem reduz a
 imagem é o codificador. Reduzir dentro da captura prendia o vídeo em ~45

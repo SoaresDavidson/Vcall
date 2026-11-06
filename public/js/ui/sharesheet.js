@@ -275,6 +275,8 @@ export function escolherCompartilhamento({ podeAudio = true, desktop = null, tro
       prefs.set("share:surface", escolha.surface);
       prefs.set("screen:quality", escolha.quality);
       if (modoManual) prefs.set("share:mode", escolha.mode);
+      // Escolhido à mão, o modo fica; senão a Fluidez pode entrar sozinha (screen.fluidezAutomatica).
+      escolha.modoFixo = modoManual;
       prefs.set("share:audio2", escolha.withAudio);
       /*
        * Fecha ANTES de resolver. A captura precisa ser pedida ainda dentro do

@@ -362,6 +362,27 @@ console.log("✓ voz: FEC e DTX no microfone, estéreo no áudio da tela, o rest
   console.log("✓ câmera: VP9 quando a placa ou o processador dão conta, VP8 nos outros casos");
 }
 
+/* -- tela: VP9 quando o H.264 sai por software, e Fluidez quando a imagem não para -- */
+{
+  const { codecMelhorQueOSoftware, pedeFluidez } = await import("../public/js/core/tuning.js");
+  const sw = { modo: "motion", codec: "H264", hardware: false, negociados: ["video/VP9", "video/H264"] };
+  assert.equal(codecMelhorQueOSoftware(sw), "video/VP9", "Fluidez com OpenH264: troca para o VP9");
+  assert.equal(codecMelhorQueOSoftware({ ...sw, hardware: true }), null, "H.264 na placa de vídeo fica");
+  assert.equal(codecMelhorQueOSoftware({ ...sw, hardware: null }), null, "sem saber se é placa, não mexe");
+  assert.equal(codecMelhorQueOSoftware({ ...sw, codec: "VP9" }), null, "já no VP9");
+  assert.equal(codecMelhorQueOSoftware({ ...sw, modo: "text" }), null, "a Nitidez já usa VP9");
+  assert.equal(codecMelhorQueOSoftware({ ...sw, negociados: ["video/H264"] }), null, "o outro lado não fala VP9");
+
+  assert.ok(pedeFluidez({ fonteQps: 60, qps: 22, bps: 6_000_000 }), "jogo na Nitidez: 60 capturados, 22 enviados");
+  assert.ok(pedeFluidez({ fonteQps: 30, qps: 18, bps: 2_000_000 }), "vídeo a 30 qps também conta");
+  assert.ok(pedeFluidez({ fonteQps: 60, qps: 55, bps: 5_000_000 }), "55 de 60 a 5 Mbps: imagem andando (medido: 51–71% dos segundos fluidos)");
+  assert.ok(!pedeFluidez({ fonteQps: 60, qps: 60, bps: 200_000 }), "tela parada capturada a 60 (X11): quadro repetido quase não custa");
+  assert.ok(!pedeFluidez({ fonteQps: 60, qps: 58, bps: 1_500_000 }), "rolando um documento: o encoder acompanha e gasta pouco");
+  assert.ok(!pedeFluidez({ fonteQps: 8, qps: 2, bps: 4_000_000 }), "tela quase parada (digitando) não é movimento");
+  assert.ok(!pedeFluidez({ fonteQps: null, qps: null }), "sem medida, nada");
+  console.log("✓ tela: VP9 quando o H.264 sai por software, e Fluidez quando a imagem anda");
+}
+
 /* -- relé: a sala ajuda quem tem conexão ruim -- */
 const { planejarRele } = await import("../public/js/core/rele.js");
 const sala = (spec) => {

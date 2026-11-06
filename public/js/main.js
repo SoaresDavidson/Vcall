@@ -1730,6 +1730,7 @@ async function toggleScreen(opts = {}) {
     await screen.start({
       quality: escolha?.quality || prefs.get("screen:quality", "auto"),
       mode: escolha?.mode || screen.mode,
+      modoFixo: !!escolha?.modoFixo,
       // Sem painel (atalho direto), sem som: o som só vai quando pedido.
       withAudio: escolha ? escolha.withAudio : false,
       surface: escolha?.surface || null,
@@ -1755,6 +1756,7 @@ async function trocarFonte() {
     await screen.switchSource({
       quality: escolha.quality || screen.quality,
       mode: escolha.mode || screen.mode,
+      modoFixo: !!escolha.modoFixo,
       withAudio: escolha.withAudio,
       surface: escolha.surface || null,
     });
@@ -1868,6 +1870,10 @@ screen.on("start", () => {
       { tone: "info", ms: 6000, key: "screen-audio" },
     );
   }
+});
+
+screen.on("fluidez-auto", () => {
+  toast("A imagem está em movimento: passei para Fluidez, para não engasgar. Dá para voltar à Nitidez no menu da tela.", { tone: "info", ms: 5000 });
 });
 
 screen.on("switch", () => {

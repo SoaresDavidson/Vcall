@@ -376,7 +376,59 @@ export async function codecDaCamera(
 export async function codecDaTela(mode) {
   if (await porHardware("video/AV1")) return "video/AV1";
   if (await porHardware("video/VP9")) return "video/VP9";
-  return mode === "motion" && supportsCodec("video/H264") ? "video/H264" : "video/VP9";
+  return mode === "motion" && !h264PorSoftware && supportsCodec("video/H264") ? "video/H264" : "video/VP9";
+}
+
+/**
+ * A Fluidez tenta o H.264 contando com a placa de vídeo. Quando ele sai por
+ * software (OpenH264, `powerEfficientEncoder` falso), o VP9 rende mais:
+ *
+ *   - o OpenH264 do WebRTC roda numa thread só; o VP9 usa 4 a partir de 720p;
+ *   - o OpenH264 põe um quadro-chave a cada troca de cena (medido: 36 em
+ *     52 s de vídeo, nenhum pedido), e cada um é uma rajada na rede;
+ *   - com NACK, o Chrome desliga o ULPFEC no H.264, e no VP9 não.
+ *
+ * Medido pela internet de verdade (Teresina → Virgínia, 170 ms de ida e
+ * volta, quem assiste no navegador): segundos fluidos de 85% para 95%,
+ * engasgos de 2,9 para 1,2 por minuto, mesma nitidez.
+ *
+ * Devolve o codec para onde trocar, ou null. Depois da troca
+ * (`marcarH264PorSoftware`) a Fluidez já começa no VP9, nesta sessão e nas
+ * dos 7 dias seguintes neste aparelho: a placa não muda de um dia para o outro,
+ * e cada troca no meio custa um quadro-chave.
+ */
+const CHAVE_H264 = "vcall:h264-por-software";
+let h264PorSoftware = (() => {
+  try {
+    return Date.now() - Number(globalThis.localStorage?.getItem(CHAVE_H264) || 0) < 7 * 86_400_000;
+  } catch {
+    return false;
+  }
+})();
+export function marcarH264PorSoftware() {
+  h264PorSoftware = true;
+  try {
+    globalThis.localStorage?.setItem(CHAVE_H264, String(Date.now()));
+  } catch {
+    /* armazenamento bloqueado: vale só nesta sessão */
+  }
+}
+export function codecMelhorQueOSoftware({ modo, codec, hardware, negociados = [] }) {
+  if (modo !== "motion" || hardware !== false || !/^(video\/)?h264$/i.test(codec || "")) return null;
+  return negociados.some((m) => /^video\/vp9$/i.test(m)) ? "video/VP9" : null;
+}
+
+/**
+ * Uma leitura em que a imagem anda e a Nitidez não serve: a captura entrega
+ * 24 qps ou mais (vídeo, jogo, animação) e o encoder solta menos de 90% deles
+ * ou gasta 3 Mbps ou mais. A Nitidez segura a resolução e joga quadros fora;
+ * com vídeo 1080p60 ela soltava 54–55 de 60 a ~5 Mbps, e só 51–71% dos
+ * segundos chegavam fluidos pela internet (medido). Tela de texto, mesmo
+ * capturada a 60 qps (X11), gasta pouco: quadro repetido quase não custa.
+ */
+export function pedeFluidez({ fonteQps, qps, bps }) {
+  if (fonteQps == null || qps == null || fonteQps < 24) return false;
+  return qps < fonteQps * 0.9 || (bps ?? 0) >= 3_000_000;
 }
 
 /** A entrada de `params.codecs` (os negociados) para um tipo; H.264 só no modo de pacotes 1. */
@@ -585,13 +637,28 @@ export function alvoDoSom({ videoMs, alvo = 0, videoParado = false }) {
  * tela. Com a banda oscilando, a escala ia e voltava várias vezes por minuto.
  * Cresce só depois de SUBIR_ESCALA_MS de folga seguida; encolher é na hora,
  * para a imagem não congelar. `estado` guarda desde quando há folga.
+ *
+ * A exceção é a SUBIDA INICIAL: todo compartilhamento começa com a conexão
+ * estimando ~1,5 Mbps, e a primeira leitura já encolhe a imagem. Esperar 18 s
+ * ali deixava a tela em 360p–540p por 21–24 s com 14 Mbps já liberados
+ * (medido pela internet de verdade). Até o primeiro aperto (um encolhimento
+ * depois da primeira leitura), e por no máximo RAMPA_MS, a imagem cresce
+ * junto com a banda.
  */
 export const SUBIR_ESCALA_MS = 18_000;
+export const RAMPA_MS = 30_000;
 export function escalaComCalma(quer, atual, estado, agora) {
-  if (quer >= atual) {
+  if (estado.inicio == null) {
+    estado.inicio = agora;
     estado.folgaDesde = 0;
     return quer;
   }
+  if (quer >= atual) {
+    if (quer > atual) estado.apertou = true;
+    estado.folgaDesde = 0;
+    return quer;
+  }
+  if (!estado.apertou && agora - estado.inicio < RAMPA_MS) return quer;
   estado.folgaDesde ||= agora;
   if (agora - estado.folgaDesde < SUBIR_ESCALA_MS) return atual;
   estado.folgaDesde = 0;

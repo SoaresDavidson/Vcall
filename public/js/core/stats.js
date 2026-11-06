@@ -19,7 +19,7 @@
  */
 import { Emitter } from "../lib/emitter.js";
 import { clamp, Ema } from "../lib/util.js";
-import { alvoDoSom, cpuCeiling, escalaComCalma, escalaPelaBanda, meshBudget, PROFILES } from "./tuning.js";
+import { alvoDoSom, codecMelhorQueOSoftware, cpuCeiling, escalaComCalma, escalaPelaBanda, meshBudget, pedeFluidez, PROFILES } from "./tuning.js";
 
 /**
  * O endereço é da rede Tailscale (100.64.0.0/10 ou fd7a:115c:a1e0::/48)?
@@ -129,6 +129,7 @@ export class StatsMonitor extends Emitter {
     this.#tenta60Em.delete(peerId);
     this.#ema.delete(peerId);
     this.#history.delete(peerId);
+    this.#movimento.delete(peerId);
     this.samples.delete(peerId);
   }
 
@@ -364,6 +365,57 @@ export class StatsMonitor extends Emitter {
     }
   }
 
+  /**
+   * Teto de altura da Fluidez com encoder por software. O OpenH264 (uma
+   * thread) não passava de 36–41 qps em 1080p, e o teto era 720p para todos.
+   * O VP9 usa mais threads: num i5 de 12ª geração (12 threads) ele sai em
+   * 1080p a 59–60 qps, 9 ms por quadro, e quem assiste ganha ~1 dB de PSNR
+   * (medido pela internet de verdade). Máquina com menos de 8 threads fica em
+   * 720p; com 8 ou mais tenta 1080p e desce para 720p se a CPU não der conta.
+   */
+  #tetoSoftware(budget) {
+    return budget.tetoSoftware ?? ((globalThis.navigator?.hardwareConcurrency || 4) >= 8 ? 1080 : 720);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * O que a tela pede além do teto: outro codec, outro modo
+   * ---------------------------------------------------------------- */
+
+  #trocouCodec = false;
+  #movimento = new Map(); // peerId -> leituras seguidas com a imagem andando e o encoder atrás
+
+  /**
+   * Duas coisas que o teto de banda não resolve, avisadas a quem cuida da
+   * tela (mesh.js):
+   *   "codec-da-tela"      o H.264 da Fluidez saiu por software: o VP9 rende
+   *                        mais (tuning.codecMelhorQueOSoftware);
+   *   "tela-em-movimento"  3 leituras seguidas (6 s) da Nitidez com a imagem
+   *                        andando (quadros perdidos ou banda cheia): é vídeo ou jogo, e
+   *                        a Fluidez vai melhor (tuning.pedeFluidez).
+   */
+  #vigiarTela(peer, screen, perfil) {
+    let params = null;
+    try {
+      params = peer.tx.screen.sender.getParameters();
+    } catch {
+      /* sender fechando */
+    }
+    // Cópia direta desligada (a tela vai pelo SFU ou pelo relé): ela não diz nada.
+    const ligada = params?.encodings?.[0]?.active !== false;
+    if (!this.#trocouCodec && ligada) {
+      const negociados = (params?.codecs || []).map((c) => c.mimeType);
+      const codec = codecMelhorQueOSoftware({ modo: perfil.contentHint, codec: screen.codec, hardware: screen.hardware, negociados });
+      if (codec) {
+        this.#trocouCodec = true;
+        this.emit("codec-da-tela", codec);
+      }
+    }
+    const andando = ligada && perfil.contentHint === "text" && pedeFluidez({ fonteQps: screen.sourceFps, qps: screen.fps, bps: screen.bitrate });
+    const n = andando ? (this.#movimento.get(peer.id) || 0) + 1 : 0;
+    this.#movimento.set(peer.id, n);
+    if (n === 3) this.emit("tela-em-movimento");
+  }
+
   /* ---------------------------------------------------------------- *
    * Leitura
    * ---------------------------------------------------------------- */
@@ -565,6 +617,17 @@ export class StatsMonitor extends Emitter {
       budget = { screen: budgets.screen, camera: budgets.camera };
       this.#budget.set(peer.id, budget);
     }
+    // Cada compartilhamento começa do zero: a subida inicial de
+    // tuning.escalaComCalma e o teto de resolução por software.
+    const trilha = peer.tx.screen.sender.track.id;
+    if (budget.trilha !== trilha) {
+      budget.trilha = trilha;
+      budget.escala = undefined;
+      budget.inicio = undefined;
+      budget.apertou = false;
+      budget.folgaDesde = 0;
+      budget.tetoSoftware = undefined;
+    }
 
     const avail = sample.transport.availableOutgoing;
     const before = budget.screen;
@@ -586,6 +649,7 @@ export class StatsMonitor extends Emitter {
     const tetoPerfil = (budget.rapido && perfil.maxFramerateComBanda) || perfil.maxFramerate || cpu.maxFramerate;
     const tetoFps = Math.min(cpu.maxFramerate, tetoPerfil);
     budget.framerate ??= tetoFps;
+    this.#vigiarTela(peer, screen, perfil);
 
     /*
      * Encoder que não dá conta sem dizer: o de hardware só acusa CPU acima de
@@ -596,7 +660,20 @@ export class StatsMonitor extends Emitter {
     const alvo = Math.min(screen.sourceFps ?? 0, budget.framerate);
     const atrasado = screen.limitedBy === "none" && alvo > 20 && screen.fps != null && screen.fps < alvo * 0.6;
 
-    if (screen.cpuShare > 0.3 || atrasado) {
+    // O H.264 por software está de saída (codec-da-tela): a CPU dele não conta.
+    const trocandoCodec = this.#trocouCodec && /h264/i.test(screen.codec || "");
+    const desceResolucao = perfil.contentHint === "motion" && screen.hardware === false && this.#tetoSoftware(budget) > 720;
+    // Por software o encoder fica para trás sem acusar CPU (OpenH264 em 1080p: 40 de 60).
+    const ficaParaTras = alvo > 20 && screen.fps != null && screen.fps < alvo * 0.85;
+
+    if ((screen.cpuShare > 0.3 || atrasado) && trocandoCodec) {
+      /* espera o VP9 entrar */
+    } else if ((screen.cpuShare > 0.3 || atrasado || ficaParaTras) && desceResolucao) {
+      // Fluidez por software sem fôlego para 1080p: o primeiro degrau é a
+      // resolução (720p), não os quadros — é o que o "maintain-framerate" pede.
+      budget.tetoSoftware = 720;
+      this.emit("limited", { peerId: peer.id, reason: "cpu" });
+    } else if (screen.cpuShare > 0.3 || atrasado) {
       // Limitado por processador: derrubar quadros preserva a legibilidade
       // muito melhor do que encolher a imagem. Um degrau por vez (60, 45,
       // 34, 25…): ir de 60 direto a 15 por um soluço da CPU era jogar fora a
@@ -654,21 +731,25 @@ export class StatsMonitor extends Emitter {
     budget.screen = clamp(budget.screen, FLOOR.screen, Math.min(CEIL.screen, budgets.screen));
     // Vídeo e jogo encolhem com a banda, para os quadros não caírem (tuning.js).
     const qps = Math.min(budget.framerate, Math.max(30, screen.sourceFps ?? budget.framerate));
+    // A leitura em que o codec acabou de trocar traz a meta do encoder
+    // recém-criado, que não diz nada da banda.
+    const codecTrocou = budget.codec != null && budget.codec !== screen.codec;
+    budget.codec = screen.codec;
     const escalaAntes = budget.escala ?? 1;
     budget.escala =
-      perfil.contentHint === "motion"
-        ? escalaComCalma(escalaPelaBanda(screen.targetBitrate, width * height, qps, escalaAntes), escalaAntes, budget, performance.now())
-        : 1;
+      perfil.contentHint !== "motion"
+        ? 1
+        : codecTrocou
+          ? escalaAntes
+          : escalaComCalma(escalaPelaBanda(screen.targetBitrate, width * height, qps, escalaAntes), escalaAntes, budget, performance.now());
     /*
      * Na Fluidez a captura vem no tamanho da janela (screen.js), e o teto de
      * resolução fica aqui: o da qualidade escolhida e, com encoder por
      * software (a máquina não codifica o codec na placa, ou o de hardware
-     * caiu no meio da chamada), 720p. 1080p em movimento não passa de 36–41
-     * qps na CPU (medido, OpenH264 num i5 de 12ª geração); para vídeo e jogo,
-     * quadro vale mais que pixel.
+     * caiu no meio da chamada), o de #tetoSoftware.
      */
     const alturaFonte = screen.sourceHeight || height;
-    const tetoAltura = perfil.contentHint === "motion" ? Math.min(perfil.alturaMax ?? 1080, screen.hardware === false ? 720 : Infinity) : Infinity;
+    const tetoAltura = perfil.contentHint === "motion" ? Math.min(perfil.alturaMax ?? 1080, screen.hardware === false ? this.#tetoSoftware(budget) : Infinity) : Infinity;
     const escala = Math.max(cpu.scaleResolutionDownBy, budget.escala, alturaFonte / tetoAltura);
 
     // Também quando o sender diverge do orçamento: cada renegociação ou troca

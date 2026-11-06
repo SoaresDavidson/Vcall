@@ -97,6 +97,8 @@ export class ScreenShare extends Emitter {
 
   /** "text" para slides/código, "motion" para vídeo/animação. */
   mode = "text";
+  /** A pessoa escolheu o modo à mão: a Fluidez automática não mexe nele. */
+  modoFixo = false;
   quality = "auto";
   settings = null;
 
@@ -131,11 +133,12 @@ export class ScreenShare extends Emitter {
    * clique: depois de um `await` intermediário o navegador já perdeu a
    * "ativação transitória" e recusa a captura.
    */
-  async start({ quality = this.quality, mode = this.mode, withAudio = false, surface = null } = {}) {
+  async start({ quality = this.quality, mode = this.mode, withAudio = false, surface = null, modoFixo = false } = {}) {
     if (this.active) return this.stream;
 
     this.quality = quality;
     this.mode = mode;
+    this.modoFixo = !!modoFixo;
     this.surface = surface;
     this.wantedAudio = !!withAudio;
     const stream = await this.#capturar(withAudio, surface);
@@ -153,14 +156,15 @@ export class ScreenShare extends Emitter {
    * (replaceTrack), sem renegociar. Se a pessoa desistir no seletor, a
    * transmissão atual continua como estava.
    */
-  async switchSource({ withAudio = this.wantedAudio, surface = null, quality = this.quality, mode = this.mode } = {}) {
-    if (!this.active) return this.start({ withAudio, surface, quality, mode });
+  async switchSource({ withAudio = this.wantedAudio, surface = null, quality = this.quality, mode = this.mode, modoFixo = this.modoFixo } = {}) {
+    if (!this.active) return this.start({ withAudio, surface, quality, mode, modoFixo });
     const stream = await this.#capturar(withAudio, surface, quality);
     const antigas = this.stream.getTracks();
     const relayAntigo = this.#relay;
     this.#relay = null;
     this.quality = quality;
     this.mode = mode;
+    this.modoFixo = !!modoFixo;
     this.surface = surface;
     this.wantedAudio = !!withAudio;
     await this.#adotar(stream);
@@ -298,8 +302,12 @@ export class ScreenShare extends Emitter {
     if ("contentHint" in this.sendTrack) this.sendTrack.contentHint = video.contentHint;
   }
 
-  /** Alterna entre priorizar nitidez (texto) e fluidez (vídeo). */
-  setMode(mode) {
+  /**
+   * Alterna entre priorizar nitidez (texto) e fluidez (vídeo). Escolher no
+   * menu fixa o modo; `auto` é a troca feita pelo próprio Vcall.
+   */
+  setMode(mode, { auto = false } = {}) {
+    if (!auto) this.modoFixo = true;
     if (mode === this.mode) return this.mode;
     this.mode = mode === "motion" ? "motion" : "text";
     for (const t of [this.videoTrack, this.sendTrack]) {
@@ -310,6 +318,26 @@ export class ScreenShare extends Emitter {
     this.emit("mode", this.mode);
     this.emit("change", this.snapshot());
     return this.mode;
+  }
+
+  /**
+   * Vídeo ou jogo na Nitidez sai aos trancos: ela segura a resolução e joga
+   * quadros fora. O padrão do painel é a Nitidez, e o nome da janela de um
+   * jogo não diz nada (sharesheet.pareceVideo), então quem percebe é o
+   * StatsMonitor: a imagem anda e o encoder não acompanha. Só vale se a
+   * pessoa não escolheu o modo à mão.
+   */
+  fluidezAutomatica() {
+    if (!this.active || this.modoFixo || this.mode === "motion") return false;
+    this.setMode("motion", { auto: true });
+    this.emit("fluidez-auto");
+    return true;
+  }
+
+  /** O codec desta máquina mudou (tuning.marcarH264PorSoftware): o perfil vai junto. */
+  async reavaliarCodecs() {
+    this.#codecs = { text: await codecDaTela("text"), motion: await codecDaTela("motion") };
+    if (this.active) this.emit("perfil", this.profile);
   }
 
   async setQuality(quality) {

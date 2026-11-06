@@ -13,6 +13,7 @@ import { Peer } from "./peer.js";
 import { Rele } from "./rele.js";
 import { SfuSala } from "./sfu.js";
 import { StatsMonitor } from "./stats.js";
+import { marcarH264PorSoftware } from "./tuning.js";
 import { VoiceActivity } from "./vad.js";
 
 /**
@@ -505,13 +506,16 @@ export class Mesh extends Emitter {
     this.screen.on("change", push);
     // Trocar entre "texto" e "movimento" muda a dica de conteúdo e a política
     // de degradação; basta reaplicar o perfil, sem renegociar nada.
-    this.screen.on("mode", () => {
+    const retunar = () => {
       const local = this.#localSnapshot();
       for (const peer of this.peers.values()) {
         peer.screenProfile = local.screenProfile;
         peer.retune(local);
       }
-    });
+    };
+    this.screen.on("mode", retunar);
+    // Outro codec para a tela (stats.js, "codec-da-tela"): também sem renegociar.
+    this.screen.on("perfil", retunar);
 
     this.on("peer-added", ({ peer }) => peer.attachLocal(this.#localSnapshot()));
   }
@@ -519,6 +523,11 @@ export class Mesh extends Emitter {
   #wireStats() {
     this.stats.on("update", (samples) => this.emit("stats", samples));
     this.stats.on("limited", (info) => this.emit("limited", info));
+    this.stats.on("codec-da-tela", () => {
+      marcarH264PorSoftware();
+      this.screen.reavaliarCodecs();
+    });
+    this.stats.on("tela-em-movimento", () => this.screen.fluidezAutomatica());
     this.vad.on("speaking", (e) => {
       this.emit("speaking", e);
       // A própria transição fala/cala vai para todo mundo: quem me silenciou

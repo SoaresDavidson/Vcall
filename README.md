@@ -29,15 +29,15 @@ conteúdo de conversa fica em disco.
 
 | Sistema | Arquivo |
 | --- | --- |
-| Windows 10/11 | `VcallSetup-3.21.0.exe` |
-| Fedora, openSUSE, RHEL | `Vcall-3.21.0-x86_64.rpm` |
-| Arch, Manjaro, EndeavourOS | `Vcall-3.21.0-x64.pacman` |
-| Ubuntu, Debian, Mint, Pop!_OS | `Vcall-3.21.0-amd64.deb` |
-| Qualquer Linux | `Vcall-3.21.0-x86_64.AppImage` ou `.tar.gz` |
+| Windows 10/11 | `VcallSetup-3.22.0.exe` |
+| Fedora, openSUSE, RHEL | `Vcall-3.22.0-x86_64.rpm` |
+| Arch, Manjaro, EndeavourOS | `Vcall-3.22.0-x64.pacman` |
+| Ubuntu, Debian, Mint, Pop!_OS | `Vcall-3.22.0-amd64.deb` |
+| Qualquer Linux | `Vcall-3.22.0-x86_64.AppImage` ou `.tar.gz` |
 
 Tudo em **[Releases](https://github.com/victor-kauan-coder/Vcall/releases/latest)** ·
 passo a passo na **[wiki](https://github.com/victor-kauan-coder/Vcall/wiki/Instalacao)** ·
-o que mudou na **[3.21.0](docs/release/v3.21.0.md)**.
+o que mudou na **[3.22.0](docs/release/v3.22.0.md)**.
 
 ## Recursos
 

@@ -2059,11 +2059,12 @@ if (process.platform === "linux") {
     };
   }
   /** Roda `voltas` ciclos do monitor sem esperar os 2 s de cada um. */
-  async function rodar(peer, voltas) {
+  async function rodar(peer, voltas, antes = () => {}) {
     const original = globalThis.setInterval;
     let ciclo = null;
     globalThis.setInterval = (fn) => ((ciclo = fn), 1);
     const m = new StatsMonitor(() => [peer]);
+    antes(m);
     m.start();
     globalThis.setInterval = original;
     for (let i = 0; i < voltas; i++) await ciclo();
@@ -2105,9 +2106,22 @@ if (process.platform === "linux") {
   ok("tela pela internet: banda lida do par em uso, perda pequena não derruba o teto e o jogo encolhe com a banda");
 
   // 3.17.2: sem encoder de hardware, vídeo em 1080p não passa de ~40 qps na CPU.
+  // 3.22: com o VP9 (várias threads), máquina de 8+ threads tenta 1080p e só
+  // desce para 720p se o encoder ficar para trás.
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const comNucleos = (n) => Object.defineProperty(globalThis, "navigator", { value: { hardwareConcurrency: n }, configurable: true });
+  comNucleos(12);
   const semPlaca = parFalso({ fps: 40, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000, hw: false });
   await rodar(semPlaca, 2);
-  assert.equal(semPlaca.enc.scaleResolutionDownBy, 1.5, `encoder por software na Fluidez: escala ${semPlaca.enc.scaleResolutionDownBy} (1080p tem de virar 720p)`);
+  assert.equal(semPlaca.enc.scaleResolutionDownBy, 1.5, `encoder por software na Fluidez: escala ${semPlaca.enc.scaleResolutionDownBy} (1080p a 40 de 60 tem de virar 720p)`);
+  const vp9Folgado = parFalso({ fps: 59, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000, hw: false });
+  await rodar(vp9Folgado, 3);
+  assert.equal(vp9Folgado.enc.scaleResolutionDownBy, 1, `software que acompanha 1080p60 com 12 threads: escala ${vp9Folgado.enc.scaleResolutionDownBy}`);
+  comNucleos(4);
+  const quatro = parFalso({ fps: 59, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000, hw: false });
+  await rodar(quatro, 2);
+  assert.equal(quatro.enc.scaleResolutionDownBy, 1.5, "por software com 4 threads: 720p direto");
+  Object.defineProperty(globalThis, "navigator", nav);
   const comPlaca = parFalso({ fps: 60, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000, hw: true });
   await rodar(comPlaca, 2);
   assert.equal(comPlaca.enc.scaleResolutionDownBy, 1, "com hardware, a imagem fica cheia");
@@ -2121,10 +2135,20 @@ if (process.platform === "linux") {
   const leve = parFalso({ fps: 60, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000, hw: true }, { ...PROFILES.screenMotion, alturaMax: 720 });
   await rodar(leve, 2);
   assert.equal(leve.enc.scaleResolutionDownBy, 1.5, `qualidade de 720p com placa: escala ${leve.enc.scaleResolutionDownBy}`);
+  // 3.22: vídeo na Nitidez pede a Fluidez; a cópia direta desligada (SFU, relé) não conta.
+  let pediu = 0;
+  const videoNaNitidez = parFalso({ fps: 54, w: 1920, h: 1080, motivo: "none", alvo: 6_000_000 }, PROFILES.screenText);
+  await rodar(videoNaNitidez, 4, (m) => m.on("tela-em-movimento", () => pediu++));
+  assert.equal(pediu, 1, `vídeo na Nitidez (54 de 60): pediu a Fluidez ${pediu} vez(es)`);
+  pediu = 0;
+  const pelaSfu = parFalso({ fps: 0, w: 1920, h: 1080, motivo: "none", alvo: 6_000_000 }, PROFILES.screenText);
+  pelaSfu.enc.active = false;
+  await rodar(pelaSfu, 4, (m) => m.on("tela-em-movimento", () => pediu++));
+  assert.equal(pediu, 0, "com a cópia direta desligada (tela pelo SFU), 0 qps não é engasgo");
   const textoSemPlaca = parFalso({ fps: 30, w: 1920, h: 1080, motivo: "none", alvo: 6_000_000, hw: false }, PROFILES.screenText);
   await rodar(textoSemPlaca, 2);
   assert.equal(textoSemPlaca.enc.scaleResolutionDownBy, 1, "texto não perde resolução por causa do encoder");
-  ok("tela sem encoder de hardware: vídeo e jogo vão em 720p, texto continua cheio");
+  ok("tela sem encoder de hardware: vídeo e jogo em 1080p só com 8+ threads e o encoder acompanhando, senão 720p; texto continua cheio");
 }
 
 /* ------------------------------------------------------------------ *
@@ -2198,17 +2222,27 @@ if (process.platform === "linux") {
  * é na hora; crescer só depois de folga seguida.
  * ------------------------------------------------------------------ */
 {
-  const { escalaComCalma, SUBIR_ESCALA_MS } = await import("../public/js/core/tuning.js");
+  const { escalaComCalma, SUBIR_ESCALA_MS, RAMPA_MS } = await import("../public/js/core/tuning.js");
+  // Subida inicial: a conexão começa estimando pouco, e a imagem acompanha.
+  const ini = {};
+  assert.equal(escalaComCalma(3, 1, ini, 0), 3, "primeira leitura: a banda ainda está subindo, começa pequena");
+  assert.equal(escalaComCalma(2, 3, ini, 2000), 2, "na subida inicial a imagem cresce junto com a banda, sem esperar 18 s");
+  assert.equal(escalaComCalma(1.5, 2, ini, 4000), 1.5);
+  const longa = {};
+  escalaComCalma(3, 1, longa, 0);
+  assert.equal(escalaComCalma(2, 3, longa, RAMPA_MS), 3, "a subida inicial tem prazo: depois dele, volta a esperar a folga");
+
   const est = {};
+  escalaComCalma(2, 1, est, -2000);
   assert.equal(escalaComCalma(3, 2, est, 0), 3, "a banda caiu: encolhe na hora");
-  assert.equal(escalaComCalma(2, 3, est, 1000), 3, "folga recém-aberta: espera");
+  assert.equal(escalaComCalma(2, 3, est, 1000), 3, "depois de um aperto, folga recém-aberta: espera");
   assert.equal(escalaComCalma(2, 3, est, 1000 + SUBIR_ESCALA_MS - 1), 3, "ainda não completou o tempo");
   assert.equal(escalaComCalma(2, 3, est, 1000 + SUBIR_ESCALA_MS), 2, "folga estável: cresce");
   assert.equal(escalaComCalma(1.5, 2, est, 50_000), 2);
   assert.equal(escalaComCalma(2, 2, est, 55_000), 2, "a folga sumiu no meio");
   assert.equal(escalaComCalma(1.5, 2, est, 60_000), 2, "a contagem recomeça do zero");
   assert.ok(SUBIR_ESCALA_MS >= 15_000 && SUBIR_ESCALA_MS <= 20_000);
-  ok("tela: a resolução sobe só com folga estável (15–20 s) e desce na hora");
+  ok("tela: a resolução acompanha a subida inicial da banda, depois sobe só com folga estável (15–20 s) e desce na hora");
 }
 
 /* ------------------------------------------------------------------ *
