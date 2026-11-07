@@ -18,3 +18,25 @@
  * duas pontas a oferecem. Com quem entra pelo navegador, nada muda.
  */
 export const TRIALS_WEBRTC = "WebRTC-FlexFEC-03/Enabled/WebRTC-FlexFEC-03-Advertised/Enabled/";
+
+/**
+ * Opções do Chromium para o codificador escolhido em Configurações ›
+ * Transmissão (tuning.MODOS_CODIFICADOR). Valem só a partir da próxima vez
+ * que o app abrir: o Chromium lê a linha de comando uma vez.
+ *
+ *   gpu   sem o sandbox da GPU, só quando a pessoa confirmou: em alguns
+ *         Windows, com o sandbox ligado, nenhum codificador da placa aparece
+ *         (medido num notebook Intel + RTX 2050; sem ele surgem o VP9 e o
+ *         H.264 do Quick Sync). O Chromium considera esse sandbox uma
+ *         proteção crítica. Forçar a GPU dedicada não ajuda: o Chromium
+ *         escolheu o codificador da Intel mesmo desenhando na NVIDIA, e só
+ *         poria o Vcall para disputar a placa do jogo.
+ *         Medido, 1080p60 com 10 threads ocupadas (o jogo): VP9 por software
+ *         7,7 qps; VP9 da placa 60 qps.
+ *   cpu   desliga a codificação pela placa: tudo pelo processador.
+ */
+export function opcoesDoCodificador({ modo = "auto", semSandbox = false } = {}) {
+  if (modo === "gpu") return semSandbox ? ["disable-gpu-sandbox"] : [];
+  if (modo === "cpu") return ["disable-accelerated-video-encode"];
+  return [];
+}

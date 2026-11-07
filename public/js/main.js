@@ -37,7 +37,8 @@ import { HostPanel } from "./features/host.js";
 import { pedirPermissoes, revisarPermissoes } from "./ui/permissions.js";
 import { escolherCompartilhamento } from "./ui/sharesheet.js";
 import { profileSection } from "./ui/profile-editor.js";
-import { Dashboard, copy, linkFor } from "./ui/dashboard.js";
+import { Dashboard, copy, linkFor, modal } from "./ui/dashboard.js";
+import { definirModoDoCodificador, modoDoCodificador, placaCodificaH264 } from "./core/tuning.js";
 import { linkCurto, linkWhatsApp } from "./lib/invite.js";
 import { installMotion, magnifyDock, playIntro, swap, stagger } from "./ui/motion.js";
 import { MiniCall } from "./ui/minicall.js";
@@ -1497,6 +1498,103 @@ function blocoDoTurn() {
   });
   host.configTurn().then(preencher).catch(() => (dica.textContent = "Não consegui ler esta configuração."));
   mostrar();
+  return bloco;
+}
+
+/**
+ * "Transmissão" nas configurações: por onde a tela e a câmera são codificadas
+ * (tuning.MODOS_CODIFICADOR). No navegador só dá para escolher o codec leve;
+ * placa e processador são opções do app de mesa, que valem ao reabrir
+ * (desktop/webrtc.opcoesDoCodificador).
+ *
+ * "Placa de vídeo" numa máquina em que o Windows não mostra o codificador da
+ * placa com o sandbox da GPU ligado: o Vcall avisa do risco e só abre sem a
+ * proteção se a pessoa confirmar. Escolher outro modo religa a proteção.
+ */
+function blocoDoCodificador() {
+  const opcoes = [
+    ["auto", "Automático (recomendado)"],
+    ...(host.disponivel ? [["gpu", "Placa de vídeo"], ["cpu", "Processador"]] : []),
+    ["leve", "Leve (VP8, para PC fraco)"],
+  ];
+  const sel = el("select.input", { "aria-label": "Codificar a transmissão pelo" }, opcoes.map(([value, text]) => el("option", { value, text })));
+  const dica = el("div.field__hint");
+  const reabrir = el("button.btn", { type: "button", text: "Reabrir o Vcall agora", hidden: true });
+  const bloco = el("div.stack", { "data-codificador": "" }, [el("div.field__label", { text: "Codificar a transmissão pelo" }), sel, dica, reabrir]);
+  const textos = {
+    auto: "O Vcall escolhe: a placa de vídeo quando ela codifica, senão o processador.",
+    gpu: "Pelo codificador da placa de vídeo (Quick Sync, NVENC ou AMF, o que o Windows oferecer): o jogo pode ocupar o processador sem a transmissão engasgar.",
+    cpu: "Tudo pelo processador, em VP9: mais nítido por bit, mas disputa o processador com o jogo.",
+    leve: "VP8 em até 720p, o mais leve para o processador. Para PC fraco.",
+  };
+  let estado = null;
+  const pintar = () => {
+    const extra = [];
+    if (estado?.semSandboxAgora) extra.push("A proteção (sandbox) da placa de vídeo está desligada.");
+    extra.push(estado?.reiniciar ? "Vale depois de reabrir o Vcall." : "Vale a partir da próxima transmissão.");
+    dica.textContent = [textos[sel.value], ...extra].join(" ");
+    reabrir.hidden = !estado?.reiniciar;
+  };
+  const avisarSandbox = () =>
+    new Promise((resolve) => {
+      let sim = false;
+      modal({
+        title: "Usar a placa de vídeo",
+        body: [
+          el("p", { text: "Neste computador, o Windows só libera o codificador da placa de vídeo para o Vcall com o sandbox da GPU desligado." }),
+          el("p.muted", { text: "O sandbox é uma proteção do Chromium, o motor do Vcall: se uma página maliciosa explorar uma falha da placa de vídeo, ele impede que ela saia do app. Sem ele, o risco é maior. Para religar, volte a codificação para Automático ou Processador." }),
+        ],
+        confirm: "Desligar a proteção e usar a placa",
+        onConfirm: () => (sim = true),
+        onClose: () => resolve(sim),
+      });
+    });
+  sel.addEventListener("change", async () => {
+    const modo = sel.value;
+    const antes = modoDoCodificador();
+    if (!host.disponivel) {
+      definirModoDoCodificador(modo);
+      return pintar();
+    }
+    sel.disabled = true;
+    try {
+      // Sem o sandbox agora, a placa codifica *por causa* disso: continua sem.
+      let semSandbox = !!estado?.semSandboxAgora;
+      if (modo === "gpu" && !semSandbox && !(await placaCodificaH264())) {
+        semSandbox = await avisarSandbox();
+        if (!semSandbox) {
+          sel.value = antes;
+          return pintar();
+        }
+      }
+      estado = await host.configCodificador({ modo, semSandbox: modo === "gpu" && semSandbox ? "1" : "0" });
+      definirModoDoCodificador(modo);
+      pintar();
+    } catch (err) {
+      sel.value = antes;
+      toast(err.message || "Não consegui mudar a opção agora.", { tone: "warn" });
+    } finally {
+      sel.disabled = false;
+    }
+  });
+  reabrir.addEventListener("click", async () => {
+    if (mesh.peers.size && !window.confirm("Reabrir o Vcall agora tira você desta chamada. Reabrir mesmo assim?")) return;
+    reabrir.disabled = true;
+    await host.reiniciar().catch(() => (reabrir.disabled = false));
+  });
+  sel.value = modoDoCodificador();
+  if (host.disponivel) {
+    host
+      .configCodificador()
+      .then((r) => {
+        estado = r;
+        sel.value = r.modo;
+        definirModoDoCodificador(r.modo);
+        pintar();
+      })
+      .catch(pintar);
+  }
+  pintar();
   return bloco;
 }
 
@@ -3700,6 +3798,7 @@ function openSettings({ naRecepcao = false } = {}) {
   mk("videoinput", media.devices.videoinput, "Câmera");
   mk("audiooutput", media.devices.audiooutput, "Alto-falante");
   if (deviceRows.length) section("Dispositivos", deviceRows);
+  section("Transmissão", [blocoDoCodificador()]);
 
   /*
    * Caminho curto da recepção. Tudo daqui para baixo — sensibilidade do

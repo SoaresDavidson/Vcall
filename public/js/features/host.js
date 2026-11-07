@@ -221,6 +221,16 @@ export class HostPanel extends Emitter {
     return this.#chamar("rede/config", { params: sempre == null ? null : { sempre: sempre ? "1" : "0" } });
   }
 
+  /** Codificador da transmissão (Configurações › Transmissão): sem argumento só lê. */
+  async configCodificador(config = null) {
+    return this.#chamar("codificador/config", { params: config });
+  }
+
+  /** Reabre o app (as opções do Chromium só valem ao abrir). */
+  async reiniciar() {
+    return this.#chamar("app/reiniciar");
+  }
+
   /** Servidor TURN do app: sem argumento só lê; com `config`, salva. */
   async configTurn(config = null) {
     return this.#chamar("turn/config", { params: config });

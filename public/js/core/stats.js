@@ -19,7 +19,7 @@
  */
 import { Emitter } from "../lib/emitter.js";
 import { clamp, Ema } from "../lib/util.js";
-import { alvoDoSom, codecMelhorQueOSoftware, cpuCeiling, escalaComCalma, escalaPelaBanda, meshBudget, pedeFluidez, PROFILES } from "./tuning.js";
+import { alvoDoSom, codecMelhorQueOSoftware, cpuCeiling, escalaComCalma, escalaPelaBanda, meshBudget, modoDoCodificador, pedeFluidez, PROFILES } from "./tuning.js";
 
 /**
  * O endereço é da rede Tailscale (100.64.0.0/10 ou fd7a:115c:a1e0::/48)?
@@ -374,6 +374,7 @@ export class StatsMonitor extends Emitter {
    * 720p; com 8 ou mais tenta 1080p e desce para 720p se a CPU não der conta.
    */
   #tetoSoftware(budget) {
+    if (modoDoCodificador() === "leve") return 720; // PC fraco escolheu o VP8 (tuning.MODOS_CODIFICADOR)
     return budget.tetoSoftware ?? ((globalThis.navigator?.hardwareConcurrency || 4) >= 8 ? 1080 : 720);
   }
 
@@ -627,6 +628,10 @@ export class StatsMonitor extends Emitter {
       budget.apertou = false;
       budget.folgaDesde = 0;
       budget.tetoSoftware = undefined;
+      budget.tentar1080Em = undefined;
+      budget.esperaSoftware = undefined;
+      budget.cpuEscala = 1;
+      budget.calmoCpu = 0;
     }
 
     const avail = sample.transport.availableOutgoing;
@@ -641,11 +646,14 @@ export class StatsMonitor extends Emitter {
      */
     const perfil = peer.screenProfile || {};
     const { width = 1920, height = 1080 } = peer.tx.screen.sender.track.getSettings?.() || {};
-    const porPixel = (screen.targetBitrate ?? 0) / (width * height);
+    // Bits por pixel do que SAI (a captura pode ser de 1440p e o encoder
+    // mandar 1080p): medido pela captura, 120 qps nunca passava numa janela grande.
+    const porPixel = (screen.targetBitrate ?? 0) / ((screen.width && screen.height ? screen.width * screen.height : 0) || width * height);
     // Monitor de 60 Hz: a captura não passa de 60, e cada degrau do teto até
     // 120 só reconfigurava o encoder (um congelamento no caminho, medido).
     const fonteRapida = (screen.sourceFps ?? 0) > 66;
-    budget.rapido = fonteRapida && porPixel >= (budget.rapido ? 2.9 : 3.9);
+    // 120 qps só com o encoder na placa: por software nem 1080p60 sobra (stats #tetoSoftware).
+    budget.rapido = fonteRapida && screen.hardware !== false && porPixel >= (budget.rapido ? 2.9 : 3.9);
     const tetoPerfil = (budget.rapido && perfil.maxFramerateComBanda) || perfil.maxFramerate || cpu.maxFramerate;
     const tetoFps = Math.min(cpu.maxFramerate, tetoPerfil);
     budget.framerate ??= tetoFps;
@@ -662,25 +670,43 @@ export class StatsMonitor extends Emitter {
 
     // O H.264 por software está de saída (codec-da-tela): a CPU dele não conta.
     const trocandoCodec = this.#trocouCodec && /h264/i.test(screen.codec || "");
-    const desceResolucao = perfil.contentHint === "motion" && screen.hardware === false && this.#tetoSoftware(budget) > 720;
+    const movimento = perfil.contentHint === "motion";
+    const desceResolucao = movimento && screen.hardware === false && this.#tetoSoftware(budget) > 720;
     // Por software o encoder fica para trás sem acusar CPU (OpenH264 em 1080p: 40 de 60).
     const ficaParaTras = alvo > 20 && screen.fps != null && screen.fps < alvo * 0.85;
+    /*
+     * "cpu" no qualityLimitationReason continua valendo ENQUANTO o próprio
+     * Chrome segura a imagem por causa da CPU, mesmo depois de ela folgar.
+     * Contar isso como aperto, e cortar quadros e banda a cada 2 s, levou a
+     * tela de um jogo de 60 qps e 14 Mbps a 15 qps e 600 kbps com 14 Mbps
+     * livres, e ela não voltou mais (medido pela internet de verdade, com a
+     * máquina de quem transmite ocupada). Só é aperto se o encoder também
+     * entrega menos quadros do que deve.
+     */
+    const cpuApertada = (screen.cpuShare > 0.3 && ficaParaTras) || atrasado;
 
-    if ((screen.cpuShare > 0.3 || atrasado) && trocandoCodec) {
+    if (cpuApertada && trocandoCodec) {
       /* espera o VP9 entrar */
-    } else if ((screen.cpuShare > 0.3 || atrasado || ficaParaTras) && desceResolucao) {
+    } else if ((cpuApertada || ficaParaTras) && desceResolucao) {
       // Fluidez por software sem fôlego para 1080p: o primeiro degrau é a
       // resolução (720p), não os quadros — é o que o "maintain-framerate" pede.
       budget.tetoSoftware = 720;
+      budget.calmoCpu = 0;
+      // Tenta 1080p de novo depois de um tempo calmo; se cair de novo, espera o dobro.
+      budget.tentar1080Em = performance.now() + (budget.esperaSoftware = Math.min(240_000, (budget.esperaSoftware || 15_000) * 2));
       this.emit("limited", { peerId: peer.id, reason: "cpu" });
-    } else if (screen.cpuShare > 0.3 || atrasado) {
-      // Limitado por processador: derrubar quadros preserva a legibilidade
-      // muito melhor do que encolher a imagem. Um degrau por vez (60, 45,
-      // 34, 25…): ir de 60 direto a 15 por um soluço da CPU era jogar fora a
-      // fluidez inteira.
-      // O degrau parte do que a captura dá: com teto de 120 e monitor de 60,
-      // descer para 90 não mudaria nada.
-      budget.screen = Math.max(FLOOR.screen, budget.screen * 0.8);
+    } else if (cpuApertada && movimento) {
+      // Fluidez: com a CPU apertada quem encolhe a imagem é o próprio Chrome
+      // ("maintain-framerate"); cortar quadros aqui seria o contrário do modo.
+      // Só o encoder que atrasa sem acusar (o de hardware) encolhe por aqui.
+      budget.calmoCpu = 0;
+      if (atrasado) budget.cpuEscala = Math.min(2, (budget.cpuEscala || 1) * 1.25);
+      this.emit("limited", { peerId: peer.id, reason: "cpu" });
+    } else if (cpuApertada) {
+      // Nitidez: derrubar quadros preserva a letra. Um degrau por vez (60, 45,
+      // 34, 25…), a partir do que a captura dá. A banda fica: menos bits não
+      // aliviam a CPU, só borram a imagem.
+      budget.calmoCpu = 0;
       budget.framerate = Math.max(15, Math.round((alvo || budget.framerate) * 0.75));
       this.emit("limited", { peerId: peer.id, reason: "cpu" });
     } else {
@@ -721,10 +747,16 @@ export class StatsMonitor extends Emitter {
         // de imagem parada depois de uma troca de cena).
         budget.screen = Math.min(CEIL.screen, budgets.screen);
       }
-      // A CPU folgou e o encoder acompanha o teto atual: os quadros voltam
-      // devagar, até o teto da sala.
+      // A CPU folgou e o encoder acompanha o teto atual: depois de 2 leituras
+      // calmas (4 s), os quadros voltam 50% por leitura (de 15 a 60 em ~8 s;
+      // antes, +20% e ~16 s) e a imagem encolhida pela CPU volta um degrau.
+      budget.calmoCpu = (budget.calmoCpu || 0) + 1;
       const acompanha = screen.fps == null || alvo <= 20 || screen.fps >= alvo * 0.85;
-      if (acompanha) budget.framerate = Math.round(budget.framerate * 1.2);
+      if (acompanha && budget.calmoCpu >= 2) budget.framerate = Math.round(budget.framerate * 1.5);
+      const folgado = screen.fps == null || alvo <= 20 || screen.fps >= alvo * 0.95;
+      if (budget.cpuEscala > 1 && folgado && budget.calmoCpu >= 2) budget.cpuEscala = Math.max(1, budget.cpuEscala / 1.25);
+      // O jogo aliviou a CPU: o 1080p por software tem outra chance.
+      if (budget.tetoSoftware === 720 && folgado && !ficaParaTras && performance.now() >= (budget.tentar1080Em ?? Infinity)) budget.tetoSoftware = undefined;
     }
 
     budget.framerate = Math.min(tetoFps, budget.framerate);
@@ -750,7 +782,7 @@ export class StatsMonitor extends Emitter {
      */
     const alturaFonte = screen.sourceHeight || height;
     const tetoAltura = perfil.contentHint === "motion" ? Math.min(perfil.alturaMax ?? 1080, screen.hardware === false ? this.#tetoSoftware(budget) : Infinity) : Infinity;
-    const escala = Math.max(cpu.scaleResolutionDownBy, budget.escala, alturaFonte / tetoAltura);
+    const escala = Math.max(cpu.scaleResolutionDownBy, budget.escala, alturaFonte / tetoAltura, budget.cpuEscala || 1);
 
     // Também quando o sender diverge do orçamento: cada renegociação ou troca
     // de trilha reaplica o perfil cheio (peer.retune) por cima do ajuste.

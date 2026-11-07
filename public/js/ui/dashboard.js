@@ -658,7 +658,7 @@ export async function copy(text, okMessage) {
 }
 
 /** Diálogo simples em cima de <dialog>, para não reinventar foco e Escape. */
-function modal({ title, body, confirm: confirmLabel, onConfirm }) {
+export function modal({ title, body, confirm: confirmLabel, onConfirm, onClose }) {
   const dlg = el("dialog.modal");
   const ok = el("button.btn.btn--primary", { type: "button", text: confirmLabel });
   const card = el("div.modal__card", {}, [
@@ -684,7 +684,7 @@ function modal({ title, body, confirm: confirmLabel, onConfirm }) {
     if (onConfirm() !== false) dlg.close();
   };
   ok.addEventListener("click", run);
-  dlg.addEventListener("close", () => dlg.remove());
+  dlg.addEventListener("close", () => (dlg.remove(), onClose?.()));
   dlg.showModal();
   return { el: dlg, confirm: run };
 }

@@ -365,18 +365,68 @@ const ehCelular = () => {
 
 export async function codecDaCamera(
   outros,
-  { nucleos = globalThis.navigator?.hardwareConcurrency || 2, celular = ehCelular(), hardware = porHardware, suporta = supportsCodec } = {},
+  { nucleos = globalThis.navigator?.hardwareConcurrency || 2, celular = ehCelular(), hardware = porHardware, suporta = supportsCodec, modo = modoDoCodificador() } = {},
 ) {
-  if (!suporta("video/VP9")) return "video/VP8";
+  if (modo === "leve" || !suporta("video/VP9")) return "video/VP8";
   if (await hardware("video/VP9")) return "video/VP9";
   if (!celular && nucleos >= 4 && outros <= 2) return "video/VP9";
   return "video/VP8";
 }
 
-export async function codecDaTela(mode) {
-  if (await porHardware("video/AV1")) return "video/AV1";
-  if (await porHardware("video/VP9")) return "video/VP9";
-  return mode === "motion" && !h264PorSoftware && supportsCodec("video/H264") ? "video/H264" : "video/VP9";
+export async function codecDaTela(mode, { modo = modoDoCodificador(), hardware = porHardware, suporta = supportsCodec } = {}) {
+  if (modo === "leve") return "video/VP8";
+  if (modo === "cpu") return "video/VP9";
+  if (await hardware("video/AV1")) return "video/AV1";
+  if (await hardware("video/VP9")) return "video/VP9";
+  return mode === "motion" && !h264PorSoftware && suporta("video/H264") ? "video/H264" : "video/VP9";
+}
+
+/**
+ * Por onde a transmissão é codificada (Configurações › Transmissão):
+ *
+ *   auto  o Vcall escolhe (codecDaTela);
+ *   gpu   a placa de vídeo: o mesmo codec do automático (o da placa
+ *         primeiro); no app de mesa, se a placa não aparece, ele abre sem o
+ *         sandbox da GPU depois de a pessoa confirmar
+ *         (desktop/webrtc.opcoesDoCodificador);
+ *   cpu   o processador: o app de mesa desliga a codificação pela placa, e a
+ *         tela vai no VP9 por software;
+ *   leve  VP8 na tela e na câmera, em até 720p: custa 2 a 3 vezes menos
+ *         processador que o VP9, para PC fraco. (VP7 não existe no WebRTC.)
+ */
+export const MODOS_CODIFICADOR = ["auto", "gpu", "cpu", "leve"];
+const CHAVE_CODIFICADOR = "vcall:codificador";
+export function modoDoCodificador() {
+  try {
+    const m = globalThis.localStorage?.getItem(CHAVE_CODIFICADOR);
+    return MODOS_CODIFICADOR.includes(m) ? m : "auto";
+  } catch {
+    return "auto";
+  }
+}
+export function definirModoDoCodificador(modo) {
+  try {
+    globalThis.localStorage?.setItem(CHAVE_CODIFICADOR, MODOS_CODIFICADOR.includes(modo) ? modo : "auto");
+  } catch {
+    /* armazenamento bloqueado: fica no automático */
+  }
+}
+
+/**
+ * A placa de vídeo codifica H.264 para esta página? Pergunta ao WebCodecs
+ * pedindo hardware, que usa os mesmos codificadores do WebRTC. O
+ * `mediaCapabilities` não serve: numa RTX 2050 ele diz "software" para o
+ * H.264 da placa. No Windows, com o sandbox da GPU ligado, os codificadores
+ * da placa às vezes não aparecem (medido: nem Intel nem NVIDIA).
+ */
+export async function placaCodificaH264() {
+  if (typeof VideoEncoder === "undefined") return null;
+  try {
+    const r = await VideoEncoder.isConfigSupported({ codec: "avc1.42001f", width: 1280, height: 720, bitrate: 4_000_000, framerate: 60, hardwareAcceleration: "prefer-hardware" });
+    return !!r.supported;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -633,35 +683,50 @@ export function alvoDoSom({ videoMs, alvo = 0, videoParado = false }) {
 }
 
 /**
- * Subir a resolução reinicia o encoder e gera um quadro-chave: um soluço na
- * tela. Com a banda oscilando, a escala ia e voltava várias vezes por minuto.
- * Cresce só depois de SUBIR_ESCALA_MS de folga seguida; encolher é na hora,
- * para a imagem não congelar. `estado` guarda desde quando há folga.
+ * Quando a resolução pode voltar a crescer depois de encolher pela banda.
  *
- * A exceção é a SUBIDA INICIAL: todo compartilhamento começa com a conexão
- * estimando ~1,5 Mbps, e a primeira leitura já encolhe a imagem. Esperar 18 s
- * ali deixava a tela em 360p–540p por 21–24 s com 14 Mbps já liberados
- * (medido pela internet de verdade). Até o primeiro aperto (um encolhimento
- * depois da primeira leitura), e por no máximo RAMPA_MS, a imagem cresce
- * junto com a banda.
+ * Encolher é na hora, para a imagem não congelar. Crescer espera alguns
+ * segundos de folga seguida: cada troca de resolução reconfigura o encoder (no
+ * H.264, um quadro-chave), e com a banda oscilando a imagem ia e voltava.
+ *
+ * A espera ERA fixa em 18 s, e quem tinha uma queda de internet passageira via
+ * a imagem pequena por meio minuto depois de a banda voltar. Agora ela começa
+ * em SUBIR_ESCALA_MIN_MS e só dobra (até SUBIR_ESCALA_MAX_MS) quando a imagem
+ * cresce e logo encolhe de novo — o vaivém que a espera existe para evitar.
+ * Um minuto sem vaivém, e ela volta a encurtar.
+ *
+ * Na SUBIDA INICIAL (a conexão começa estimando ~1,5 Mbps e a primeira leitura
+ * já encolhe), até o primeiro aperto e por no máximo RAMPA_MS, a imagem cresce
+ * junto com a banda, sem espera nenhuma.
  */
-export const SUBIR_ESCALA_MS = 18_000;
+export const SUBIR_ESCALA_MIN_MS = 4_000;
+export const SUBIR_ESCALA_MAX_MS = 30_000;
+/** Crescer e encolher dentro deste tempo é vaivém: a espera dobra. */
+const VAIVEM_MS = 20_000;
 export const RAMPA_MS = 30_000;
 export function escalaComCalma(quer, atual, estado, agora) {
   if (estado.inicio == null) {
     estado.inicio = agora;
     estado.folgaDesde = 0;
+    estado.espera = SUBIR_ESCALA_MIN_MS;
     return quer;
   }
+  estado.espera ??= SUBIR_ESCALA_MIN_MS;
   if (quer >= atual) {
-    if (quer > atual) estado.apertou = true;
+    if (quer > atual) {
+      estado.apertou = true;
+      if (estado.cresceuEm && agora - estado.cresceuEm < VAIVEM_MS) estado.espera = Math.min(SUBIR_ESCALA_MAX_MS, estado.espera * 2);
+      estado.encolheuEm = agora;
+    }
     estado.folgaDesde = 0;
     return quer;
   }
   if (!estado.apertou && agora - estado.inicio < RAMPA_MS) return quer;
   estado.folgaDesde ||= agora;
-  if (agora - estado.folgaDesde < SUBIR_ESCALA_MS) return atual;
+  if (agora - estado.folgaDesde < estado.espera) return atual;
   estado.folgaDesde = 0;
+  if (agora - (estado.encolheuEm ?? 0) > 60_000) estado.espera = Math.max(SUBIR_ESCALA_MIN_MS, estado.espera / 2);
+  estado.cresceuEm = agora;
   return quer;
 }
 

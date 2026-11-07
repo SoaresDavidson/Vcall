@@ -362,6 +362,28 @@ console.log("✓ voz: FEC e DTX no microfone, estéreo no áudio da tela, o rest
   console.log("✓ câmera: VP9 quando a placa ou o processador dão conta, VP8 nos outros casos");
 }
 
+/* -- Configurações › Transmissão: placa de vídeo, processador ou leve -- */
+{
+  const { codecDaTela, codecDaCamera } = await import("../public/js/core/tuning.js");
+  const { opcoesDoCodificador } = await import("../desktop/webrtc.js");
+  const sem = { hardware: async () => false, suporta: () => true };
+  const vp9NaPlaca = { hardware: async (m) => m === "video/VP9", suporta: () => true };
+  assert.equal(await codecDaTela("motion", { ...sem, modo: "leve" }), "video/VP8", "leve: VP8 na tela");
+  assert.equal(await codecDaTela("text", { ...sem, modo: "leve" }), "video/VP8");
+  assert.equal(await codecDaTela("motion", { ...vp9NaPlaca, modo: "cpu" }), "video/VP9", "processador: VP9, mesmo com a placa disponível");
+  assert.equal(await codecDaTela("motion", { ...vp9NaPlaca, modo: "gpu" }), "video/VP9", "placa: o VP9 da placa (com o jogo ocupando a CPU: 60 qps em 1080p; o H.264 da placa caía para 540p)");
+  assert.equal(await codecDaTela("motion", { hardware: async (m) => m === "video/AV1", suporta: () => true, modo: "gpu" }), "video/AV1", "placa com AV1: AV1");
+  assert.equal(await codecDaTela("text", { ...sem, modo: "auto" }), "video/VP9", "automático: como antes");
+  assert.equal(await codecDaCamera(1, { nucleos: 8, celular: false, hardware: async () => true, suporta: () => true, modo: "leve" }), "video/VP8", "leve: câmera no VP8");
+
+  assert.deepEqual(opcoesDoCodificador({ modo: "auto" }), []);
+  assert.deepEqual(opcoesDoCodificador({ modo: "leve" }), [], "leve não mexe na placa");
+  assert.deepEqual(opcoesDoCodificador({ modo: "gpu" }), [], "placa que aparece com o sandbox: nada a mudar");
+  assert.deepEqual(opcoesDoCodificador({ modo: "gpu", semSandbox: true }), ["disable-gpu-sandbox"], "sem sandbox só com a confirmação");
+  assert.deepEqual(opcoesDoCodificador({ modo: "cpu", semSandbox: true }), ["disable-accelerated-video-encode"], "processador religa o sandbox e desliga a placa");
+  console.log("✓ transmissão: placa de vídeo (sandbox só confirmado), processador ou leve (VP8)");
+}
+
 /* -- tela: VP9 quando o H.264 sai por software, e Fluidez quando a imagem não para -- */
 {
   const { codecMelhorQueOSoftware, pedeFluidez } = await import("../public/js/core/tuning.js");

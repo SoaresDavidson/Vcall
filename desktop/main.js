@@ -32,7 +32,7 @@ import { hostControl } from "./guard.js";
 import { Tunnel } from "./tunnel.js";
 import { LinkTailscale } from "./tailscale.js";
 import { lerTurn, salvarTurn, visaoDoTurn } from "./turn.js";
-import { TRIALS_WEBRTC } from "./webrtc.js";
+import { opcoesDoCodificador, TRIALS_WEBRTC } from "./webrtc.js";
 import { definirTurnLocal } from "../src/ice.js";
 import { definirSfu } from "../src/sfu.js";
 import { Sfu } from "./sfu.js";
@@ -86,6 +86,25 @@ function gravarPrefRede(pref) {
 /* "Servidor TURN" das configurações (desktop/turn.js). */
 const arquivoTurn = () => path.join(app.getPath("userData"), "turn.json");
 
+/*
+ * Por onde a transmissão é codificada (Configurações › Transmissão): fica em
+ * codificador.json e vira opção do Chromium ao abrir (webrtc.opcoesDoCodificador).
+ * O sandbox da GPU só sai com `semSandbox`, que a página só manda depois de a
+ * pessoa confirmar o aviso — e que volta a false ao escolher outro modo.
+ */
+const arquivoCodificador = () => path.join(app.getPath("userData"), "codificador.json");
+function lerCodificador() {
+  try {
+    const c = JSON.parse(readFileSync(arquivoCodificador(), "utf8"));
+    const modo = ["auto", "gpu", "cpu", "leve"].includes(c.modo) ? c.modo : "auto";
+    return { modo, semSandbox: modo === "gpu" && c.semSandbox === true };
+  } catch {
+    return { modo: "auto", semSandbox: false };
+  }
+}
+/** O que vale nesta execução; mudar só tem efeito depois de reabrir. */
+const codificadorEmUso = lerCodificador();
+
 /** Destino pedido por link antes de a janela existir. */
 let pendente = null;
 /** Origens de salas de outras pessoas que o usuário abriu por convite. */
@@ -102,6 +121,8 @@ app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 // FlexFEC no vídeo: perda de pacote sem esperar retransmissão (desktop/webrtc.js).
 app.commandLine.appendSwitch("force-fieldtrials", TRIALS_WEBRTC);
+for (const opcao of opcoesDoCodificador(codificadorEmUso)) app.commandLine.appendSwitch(opcao);
+if (codificadorEmUso.semSandbox) registrar("gpu-sem-sandbox", { motivo: "escolhido nas configurações" });
 if (process.platform === "linux") {
   // A captura pelo PipeWire (portal do Wayland) já vem ligada no Electron:
   // o `WebRTCPipeWireCapturer` saiu do Chromium no M133 e não fazia nada.
@@ -283,6 +304,34 @@ async function subirServidor() {
         if (!q.has("tipo")) return visaoDoTurn(lerTurn(arquivoTurn()));
         const r = salvarTurn(arquivoTurn(), Object.fromEntries(["tipo", "url", "urls", "usuario", "senha", "segredo"].map((k) => [k, q.get(k) || ""])));
         return r.erro ? { code: 400, erro: r.erro } : r.turn;
+      },
+
+      /*
+       * Codificador da transmissão: sem parâmetros só lê; com `modo`, grava.
+       * `reiniciar` diz se o que está gravado difere do que vale agora.
+       */
+      "codificador/config": async (url) => {
+        const q = url.searchParams;
+        if (q.has("modo")) {
+          const modo = ["auto", "gpu", "cpu", "leve"].includes(q.get("modo")) ? q.get("modo") : "auto";
+          const novo = { modo, semSandbox: modo === "gpu" && q.get("semSandbox") === "1" };
+          try {
+            mkdirSync(path.dirname(arquivoCodificador()), { recursive: true });
+            writeFileSync(arquivoCodificador(), JSON.stringify(novo));
+          } catch {
+            return { code: 500, erro: "Não consegui salvar a escolha neste computador." };
+          }
+        }
+        const salvo = lerCodificador();
+        const reiniciar = opcoesDoCodificador(salvo).join() !== opcoesDoCodificador(codificadorEmUso).join();
+        return { ...salvo, semSandboxAgora: codificadorEmUso.semSandbox, reiniciar };
+      },
+      "app/reiniciar": async () => {
+        setTimeout(() => {
+          app.relaunch({ execPath: process.env.APPIMAGE || process.execPath, args: process.argv.slice(1) });
+          app.exit(0);
+        }, 300);
+        return { ok: true };
       },
 
       // "Sempre disponível na rede": lê ou muda (e já liga ou desliga o link).

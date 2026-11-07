@@ -69,6 +69,19 @@ e a imagem congela para quem assiste. Se isso acontecer, o Vcall avisa.
 Sem codificador de vídeo na placa, a Fluidez usa o VP9 pelo processador:
 em 1080p se o computador tem 8 threads ou mais e dá conta, senão em 720p.
 
+### Placa de vídeo ou processador
+
+Em **Configurações › Transmissão** você escolhe por onde a tela é codificada:
+**Automático**, **Placa de vídeo** (para jogar e transmitir ao mesmo tempo:
+o jogo pode ocupar o processador e a transmissão não engasga),
+**Processador** ou **Leve (VP8)**, para PC fraco. Placa e processador valem
+depois de reabrir o Vcall.
+
+Em alguns Windows, o codificador da placa só aparece com o sandbox da GPU
+desligado, uma proteção do Chromium. Nesse caso o Vcall avisa do risco e só
+desliga a proteção se você confirmar. Voltar para Automático ou Processador
+liga a proteção de novo.
+
 Na Fluidez a janela é capturada no tamanho dela (até 1440p), e quem reduz a
 imagem é o codificador. Reduzir dentro da captura prendia o vídeo em ~45
 quadros por segundo. O som do computador, quando compartilhado, espera a
@@ -98,7 +111,8 @@ direto, como numa sala pequena.
 
 Pela internet, com pouca banda de envio, vídeo e jogo diminuem a imagem
 (1080p, 720p, 540p…) em vez de perder quadros: fica menos nítido, mas fluido.
-A imagem volta a crescer quando a conexão melhora. O modo de texto nunca
+A imagem volta a crescer poucos segundos depois de a conexão melhorar, e só
+espera mais quando a internet fica indo e voltando. O modo de texto nunca
 diminui, para a letra continuar legível.
 
 ## Som

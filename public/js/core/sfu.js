@@ -24,7 +24,7 @@
  * Sem SFU (navegador, servidor puro, LiveKit que não liga), nada muda: a sala
  * continua na malha.
  */
-import { alvoDoSom } from "./tuning.js";
+import { alvoDoSom, modoDoCodificador } from "./tuning.js";
 
 export const SFU_MIN_PESSOAS = 3;
 const TICK_MS = 1500;
@@ -213,7 +213,8 @@ export class SfuSala {
       if (video) {
         pub.faixas.video = await lp.publishTrack(video, {
           source: Track.Source.ScreenShare,
-          videoCodec: "h264",
+          // PC fraco (Configurações › Transmissão › Leve): VP8, o mais barato por software.
+          videoCodec: modoDoCodificador() === "leve" ? "vp8" : "h264",
           backupCodec: false,
           simulcast: true,
           screenShareEncoding: { maxBitrate: TETO_BPS, maxFramerate: 60 },

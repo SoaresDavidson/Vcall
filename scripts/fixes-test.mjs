@@ -2075,9 +2075,22 @@ if (process.platform === "linux") {
   await rodar(jogo, 6);
   assert.equal(jogo.enc.maxBitrate, PROFILES.screenMotion.maxBitrate, `"bandwidth" do encoder com a rede sobrando derrubou o teto para ${jogo.enc.maxBitrate}`);
 
+  // Encoder que atrasa sem acusar: na Fluidez a imagem encolhe e os quadros ficam;
+  // na Nitidez os quadros descem um degrau e a letra fica.
   const atrasado = parFalso({ fps: 20, w: 1920, h: 1080, motivo: "none" });
   await rodar(atrasado, 1);
-  assert.ok(atrasado.enc.maxFramerate < 60 && atrasado.enc.maxFramerate >= 30, `encoder que não acompanha a fonte: teto foi a ${atrasado.enc.maxFramerate}`);
+  assert.equal(atrasado.enc.maxFramerate, 60, `Fluidez com o encoder atrasado: teto de quadros foi a ${atrasado.enc.maxFramerate}`);
+  assert.ok(atrasado.enc.scaleResolutionDownBy > 1, `e a imagem encolhe: escala ${atrasado.enc.scaleResolutionDownBy}`);
+  const textoAtrasado = parFalso({ fps: 20, w: 1920, h: 1080, motivo: "none" }, PROFILES.screenText);
+  await rodar(textoAtrasado, 1);
+  assert.ok(textoAtrasado.enc.maxFramerate < 60 && textoAtrasado.enc.maxFramerate >= 30, `Nitidez com o encoder atrasado: teto ${textoAtrasado.enc.maxFramerate}`);
+  assert.equal(textoAtrasado.enc.maxBitrate, PROFILES.screenText.maxBitrate, "a banda não cai por CPU: menos bits não aliviam o processador");
+  // O "cpu" do Chrome continua valendo enquanto ele mesmo segura a imagem; com
+  // os quadros em dia, não é aperto, e nada é cortado (antes: 15 qps e 600 kbps).
+  const cpuSegurada = parFalso({ fps: 58, w: 1280, h: 720, motivo: "cpu" });
+  await rodar(cpuSegurada, 6);
+  assert.equal(cpuSegurada.enc.maxFramerate, 60, `"cpu" com os quadros em dia: teto ${cpuSegurada.enc.maxFramerate}`);
+  assert.equal(cpuSegurada.enc.maxBitrate, PROFILES.screenMotion.maxBitrate, `e a banda fica: ${cpuSegurada.enc.maxBitrate}`);
 
   // Monitor de 120 Hz, uma pessoa do outro lado: vídeo vai a 120 com banda para
   // isso, fica em 60 enquanto a conexão ainda sobe, e texto fica em 60 sem o
@@ -2085,6 +2098,9 @@ if (process.platform === "linux") {
   const jogo120 = parFalso({ fps: 118, fonte: 120, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000 });
   await rodar(jogo120, 3);
   assert.equal(jogo120.enc.maxFramerate, 120, `vídeo a dois num monitor de 120 Hz: teto ${jogo120.enc.maxFramerate}`);
+  const jogo120sw = parFalso({ fps: 118, fonte: 120, w: 1920, h: 1080, motivo: "none", alvo: 12_000_000, hw: false });
+  await rodar(jogo120sw, 3);
+  assert.equal(jogo120sw.enc.maxFramerate, 60, `120 qps com o encoder por software: teto ${jogo120sw.enc.maxFramerate} (tem de ficar em 60)`);
   const comeco = parFalso({ fps: 60, fonte: 120, w: 1920, h: 1080, motivo: "none", alvo: 4_000_000 });
   await rodar(comeco, 3);
   assert.equal(comeco.enc.maxFramerate, 60, `com 4 Mbps, 1080p120 congela: teto ${comeco.enc.maxFramerate}`);
@@ -2222,27 +2238,38 @@ if (process.platform === "linux") {
  * é na hora; crescer só depois de folga seguida.
  * ------------------------------------------------------------------ */
 {
-  const { escalaComCalma, SUBIR_ESCALA_MS, RAMPA_MS } = await import("../public/js/core/tuning.js");
+  const { escalaComCalma, SUBIR_ESCALA_MIN_MS, SUBIR_ESCALA_MAX_MS, RAMPA_MS } = await import("../public/js/core/tuning.js");
   // Subida inicial: a conexão começa estimando pouco, e a imagem acompanha.
   const ini = {};
   assert.equal(escalaComCalma(3, 1, ini, 0), 3, "primeira leitura: a banda ainda está subindo, começa pequena");
-  assert.equal(escalaComCalma(2, 3, ini, 2000), 2, "na subida inicial a imagem cresce junto com a banda, sem esperar 18 s");
+  assert.equal(escalaComCalma(2, 3, ini, 2000), 2, "na subida inicial a imagem cresce junto com a banda, sem esperar");
   assert.equal(escalaComCalma(1.5, 2, ini, 4000), 1.5);
   const longa = {};
   escalaComCalma(3, 1, longa, 0);
   assert.equal(escalaComCalma(2, 3, longa, RAMPA_MS), 3, "a subida inicial tem prazo: depois dele, volta a esperar a folga");
 
+  // Queda passageira de internet: a imagem volta em segundos, não em meio minuto.
   const est = {};
-  escalaComCalma(2, 1, est, -2000);
-  assert.equal(escalaComCalma(3, 2, est, 0), 3, "a banda caiu: encolhe na hora");
-  assert.equal(escalaComCalma(2, 3, est, 1000), 3, "depois de um aperto, folga recém-aberta: espera");
-  assert.equal(escalaComCalma(2, 3, est, 1000 + SUBIR_ESCALA_MS - 1), 3, "ainda não completou o tempo");
-  assert.equal(escalaComCalma(2, 3, est, 1000 + SUBIR_ESCALA_MS), 2, "folga estável: cresce");
-  assert.equal(escalaComCalma(1.5, 2, est, 50_000), 2);
-  assert.equal(escalaComCalma(2, 2, est, 55_000), 2, "a folga sumiu no meio");
-  assert.equal(escalaComCalma(1.5, 2, est, 60_000), 2, "a contagem recomeça do zero");
-  assert.ok(SUBIR_ESCALA_MS >= 15_000 && SUBIR_ESCALA_MS <= 20_000);
-  ok("tela: a resolução acompanha a subida inicial da banda, depois sobe só com folga estável (15–20 s) e desce na hora");
+  escalaComCalma(1, 1, est, -60_000);
+  assert.equal(escalaComCalma(3, 1, est, 0), 3, "a banda caiu: encolhe na hora");
+  assert.equal(escalaComCalma(1, 3, est, 2000), 3, "folga recém-aberta: espera");
+  assert.equal(escalaComCalma(1, 3, est, 2000 + SUBIR_ESCALA_MIN_MS - 1), 3, "ainda não completou a espera");
+  assert.equal(escalaComCalma(1, 3, est, 2000 + SUBIR_ESCALA_MIN_MS), 1, `folga de ${SUBIR_ESCALA_MIN_MS / 1000} s: a imagem volta`);
+  // Vaivém: cresceu e logo encolheu. A espera dobra a cada vez, até o teto.
+  assert.equal(escalaComCalma(3, 1, est, 8000), 3, "encolheu logo depois de crescer");
+  assert.equal(escalaComCalma(1, 3, est, 10_000 + 2 * SUBIR_ESCALA_MIN_MS - 1), 3, "com vaivém, a espera dobrou");
+  assert.equal(escalaComCalma(1, 3, est, 10_000 + 2 * SUBIR_ESCALA_MIN_MS + 1), 3, "a contagem começou na 1ª folga depois do aperto");
+  const vaivem = {};
+  escalaComCalma(1, 1, vaivem, -60_000);
+  let t = 0;
+  for (let i = 0; i < 6; i++) {
+    escalaComCalma(3, 1, vaivem, (t += 1000));
+    escalaComCalma(1, 3, vaivem, (t += 1000));
+    escalaComCalma(1, 3, vaivem, (t += vaivem.espera));
+  }
+  assert.equal(vaivem.espera, SUBIR_ESCALA_MAX_MS, `banda que vai e volta: a espera chega ao teto (${vaivem.espera} ms)`);
+  assert.ok(SUBIR_ESCALA_MIN_MS <= 5000 && SUBIR_ESCALA_MAX_MS >= 20_000);
+  ok("tela: a resolução acompanha a subida inicial, volta em segundos depois de uma queda e só espera mais quando a banda vai e volta");
 }
 
 /* ------------------------------------------------------------------ *
