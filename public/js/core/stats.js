@@ -19,7 +19,7 @@
  */
 import { Emitter } from "../lib/emitter.js";
 import { clamp, Ema } from "../lib/util.js";
-import { alvoDoSom, codecMelhorQueOSoftware, cpuCeiling, escalaComCalma, escalaPelaBanda, meshBudget, modoDoCodificador, pedeFluidez, PROFILES } from "./tuning.js";
+import { alvoDoSom, codecMelhorQueOSoftware, cpuCeiling, escalaComCalma, escalaPar, escalaPelaBanda, meshBudget, modoDoCodificador, pedeFluidez, PROFILES } from "./tuning.js";
 
 /**
  * O endereço é da rede Tailscale (100.64.0.0/10 ou fd7a:115c:a1e0::/48)?
@@ -548,6 +548,7 @@ export class StatsMonitor extends Emitter {
       // poucos quadros codificados não é problema.
       sourceFps: byId.get(r.mediaSourceId)?.framesPerSecond ?? null,
       sourceHeight: byId.get(r.mediaSourceId)?.height ?? null,
+      sourceWidth: byId.get(r.mediaSourceId)?.width ?? null,
       // false: o encoder em uso é por software (sem placa de vídeo para o codec).
       hardware: r.powerEfficientEncoder ?? null,
       width: r.frameWidth ?? null,
@@ -632,6 +633,10 @@ export class StatsMonitor extends Emitter {
       budget.esperaSoftware = undefined;
       budget.cpuEscala = 1;
       budget.calmoCpu = 0;
+      budget.viuPlaca = false;
+      budget.tentarPlacaEm = undefined;
+      budget.esperaPlaca = 0;
+      budget.placaDesde = undefined;
     }
 
     const avail = sample.transport.availableOutgoing;
@@ -782,7 +787,35 @@ export class StatsMonitor extends Emitter {
      */
     const alturaFonte = screen.sourceHeight || height;
     const tetoAltura = perfil.contentHint === "motion" ? Math.min(perfil.alturaMax ?? 1080, screen.hardware === false ? this.#tetoSoftware(budget) : Infinity) : Infinity;
-    const escala = Math.max(cpu.scaleResolutionDownBy, budget.escala, alturaFonte / tetoAltura, budget.cpuEscala || 1);
+    let escala = Math.max(cpu.scaleResolutionDownBy, budget.escala, alturaFonte / tetoAltura, budget.cpuEscala || 1);
+    /*
+     * A placa de vídeo que cai para o software não volta sozinha: com a CPU
+     * disputada por um jogo, o WebRTC troca o codificador da placa pelo libvpx
+     * e só tenta a placa de novo quando o codificador é recriado (medido no app
+     * de mesa: VP9 da placa a 11 ms por quadro; caído no software, 17 a 192
+     * ms). Se a placa já codificou esta transmissão, uma mudança de 0,1% na
+     * escala recria o codificador, e a placa é tentada primeiro. A espera dobra
+     * a cada tentativa (10 s, 20 s… até 2 min) e volta ao começo quando ela fica.
+     */
+    if (screen.hardware === true) {
+      budget.viuPlaca = true;
+      budget.tentarPlacaEm = undefined;
+      budget.placaDesde ??= performance.now();
+      if (performance.now() - budget.placaDesde > 60_000) budget.esperaPlaca = 0;
+    } else if (screen.hardware === false && budget.viuPlaca && !trocandoCodec) {
+      const agora = performance.now();
+      budget.placaDesde = undefined;
+      budget.tentarPlacaEm ??= agora + 10_000;
+      if (agora >= budget.tentarPlacaEm) {
+        budget.cutucao = !budget.cutucao;
+        budget.esperaPlaca = Math.min(120_000, (budget.esperaPlaca || 5_000) * 2);
+        budget.tentarPlacaEm = agora + budget.esperaPlaca;
+        this.emit("placa-de-volta", { peerId: peer.id });
+      }
+    }
+    if (budget.cutucao) escala *= 1.001;
+    // Largura e altura pares: o codificador da placa não aceita ímpares (tuning.escalaPar).
+    escala = escalaPar(screen.sourceWidth || width, alturaFonte, escala);
 
     // Também quando o sender diverge do orçamento: cada renegociação ou troca
     // de trilha reaplica o perfil cheio (peer.retune) por cima do ajuste.

@@ -362,6 +362,20 @@ console.log("✓ voz: FEC e DTX no microfone, estéreo no áudio da tela, o rest
   console.log("✓ câmera: VP9 quando a placa ou o processador dão conta, VP8 nos outros casos");
 }
 
+/* -- a imagem enviada sai com largura e altura pares (o codificador da placa recusa ímpares) -- */
+{
+  const { escalaPar } = await import("../public/js/core/tuning.js");
+  const parNosDoisJeitos = (v) => Math.floor(v) % 2 === 0 && Math.round(v) % 2 === 0;
+  for (const [w, h, e] of [[1541, 875, 1], [1541, 875, 1.25], [1901, 1080, 1], [1233, 700, 1], [1366, 768, 1.5], [3441, 1441, 2]]) {
+    const r = escalaPar(w, h, e);
+    assert.ok(r >= e && r < e * 1.1, `${w}x${h}: a escala ${r} só cresce um pouco`);
+    assert.ok(parNosDoisJeitos(w / r) && parNosDoisJeitos(h / r), `${w}x${h} @${e}: saiu ${w / r}x${h / r}`);
+  }
+  assert.equal(escalaPar(1920, 1080, 1), 1, "1080p já é par: não mexe");
+  assert.equal(escalaPar(1920, 1080, 1.5), 1.5, "720p também");
+  console.log("✓ tela: largura e altura enviadas sempre pares, para a placa de vídeo não cair no software");
+}
+
 /* -- Configurações › Transmissão: placa de vídeo, processador ou leve -- */
 {
   const { codecDaTela, codecDaCamera } = await import("../public/js/core/tuning.js");

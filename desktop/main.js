@@ -22,6 +22,7 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, unlink } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -209,6 +210,31 @@ public static class VcallEco {
     { windowsHide: true, timeout: 30_000 },
     (err, saida) => registrar("sem-economia", { ok: !err && /True/.test(String(saida)), erro: err ? String(err.message || err).slice(0, 160) : undefined }),
   );
+}
+
+/*
+ * Jogo em primeiro plano tira a vez da transmissão. A captura da janela roda
+ * no processo principal, e o codificador da placa no da GPU; com o processador
+ * disputado, o Windows dá a vez ao jogo, e a captura de uma janela a 60 qps
+ * caiu para 19 qps (medido no app de mesa, com a Placa de vídeo ligada). Ao
+ * começar a compartilhar, o Vcall sobe a própria prioridade, como o OBS
+ * recomenda para transmitir jogo: alta no principal e no da GPU (o trabalho
+ * deles é pouco e não pode esperar), acima do normal no resto. Medido com 10
+ * threads ocupando a CPU: a captura foi de 19 para 42–45 qps.
+ */
+function prioridadeDeTransmissao() {
+  if (process.platform !== "win32") return;
+  const { PRIORITY_HIGH, PRIORITY_ABOVE_NORMAL } = os.constants.priority;
+  const feitos = [];
+  for (const m of app.getAppMetrics()) {
+    try {
+      os.setPriority(m.pid, m.type === "Browser" || m.type === "GPU" ? PRIORITY_HIGH : PRIORITY_ABOVE_NORMAL);
+      feitos.push(m.type);
+    } catch {
+      /* o processo já saiu */
+    }
+  }
+  registrar("prioridade-de-transmissao", { processos: feitos.join(",") });
 }
 
 /* ==================================================================== *
@@ -995,6 +1021,7 @@ function permissoes() {
   ses.setDisplayMediaRequestHandler(
     async (pedido, callback) => {
       semEconomiaDoWindows();
+      prioridadeDeTransmissao();
       let respondido = false;
       const vez = vezDeCaptura.pegar();
       let prazo = 0;

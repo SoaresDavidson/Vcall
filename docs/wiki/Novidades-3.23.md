@@ -1,5 +1,15 @@
 # Novidades da 3.23
 
+## 3.23.1: jogo sem perder quadros com a placa de vídeo
+
+- **A placa de vídeo não cai mais para o processador:** a imagem enviada sai
+  sempre com largura e altura pares, que o codificador da placa exige. Com um
+  jogo ocupando o processador, a tela foi de 9–32 para 53–59 quadros por
+  segundo.
+- **Prioridade de transmissão no Windows:** ao compartilhar, o Vcall sobe a
+  própria prioridade, e o jogo não deixa mais a captura esperando.
+- **Se a placa cair mesmo assim, ela volta** sozinha, em segundos.
+
 ## 3.23.0: placa de vídeo e volta rápida da qualidade
 
 - **Configurações › Transmissão:** Automático, Placa de vídeo, Processador

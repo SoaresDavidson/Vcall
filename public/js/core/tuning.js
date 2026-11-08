@@ -662,6 +662,29 @@ export function escalaPelaBanda(bps, pixels, qps, atual = 1) {
 }
 
 /**
+ * A menor escala ≥ `escala` que deixa a imagem enviada com largura e altura
+ * PARES. O codificador da placa (VP9 da Intel, medido) recusa dimensões
+ * ímpares, e o WebRTC cai para o software sem avisar: 1541×875, 1901×1080 e
+ * 1233×700 saíram no libvpx; 1268×720, 986×560 e 770×438, na placa. Na
+ * Fluidez a captura vem no tamanho da janela, que pode ser qualquer número.
+ * O WebRTC arredonda o tamanho dividido pela escala (1541 ÷ 1,25 saiu 1233).
+ */
+export function escalaPar(largura, altura, escala = 1) {
+  if (!largura || !altura) return escala;
+  // Par truncando E arredondando: o valor cai em [par, par + 0,5).
+  const ok = (v) => Math.floor(v) % 2 === 0 && v - Math.floor(v) < 0.5;
+  if (ok(largura / escala) && ok(altura / escala)) return escala;
+  // Cada largura par abaixo da atual (até 10% menor), com a escala que a põe
+  // um quarto de pixel acima do par; serve a primeira que acerte a altura.
+  for (let w = Math.floor(largura / escala); w > largura / (escala * 1.1); w--) {
+    if (w % 2) continue;
+    const e = largura / (w + 0.25);
+    if (e >= escala && ok(altura / e)) return e;
+  }
+  return escala;
+}
+
+/**
  * Quanto segurar o som da tela para acompanhar a imagem, em ms
  * (`jitterBufferTarget` do som; quem recebe chama a cada leitura).
  *
