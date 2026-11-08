@@ -2,6 +2,22 @@
 
 Clique em **Compartilhar tela** (`S`).
 
+## Assistir quem está transmitindo
+
+Como no Discord, ninguém recebe a sua tela sem pedir. Os outros veem um
+ladrilho **"Fulano está transmitindo"** com o botão **Assistir** (e um aviso
+com o mesmo botão), e a tela só chega para quem clica. Quem está assistindo
+tem o botão **Parar de assistir** (o olho cortado) no canto do ladrilho.
+
+Quem não assiste não recebe nem a imagem nem o som da tela: economiza
+internet e processador, e quem transmite não gasta uma cópia com essa
+pessoa. Quando a transmissão acaba, a próxima começa de novo como convite.
+
+No celular (navegador ou app Android), a tela que você está assistindo tem o
+botão de **tela cheia**, que gira o celular para deitado. No app, o botão
+voltar sai só da tela cheia. No iPhone, a tela cheia é a do player do
+sistema.
+
 ## No aplicativo (Windows e Linux X11)
 
 O Vcall mostra a lista de verdade: **cada janela aberta** e **cada tela**, com

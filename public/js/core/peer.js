@@ -251,6 +251,25 @@ export class Peer extends Emitter {
     return this.#camPausada;
   }
 
+  /**
+   * Como no Discord: o outro lado não clicou em Assistir na minha tela, então
+   * tela e som da tela não vão (nem são codificados) para ele.
+   * `telasVistas` é de quem ele assiste (mesh.js, mensagem "ver"); null =
+   * versão antiga, que assiste tudo.
+   */
+  telasVistas = null;
+  #telaPausada = false;
+
+  async pausarTela(pausar) {
+    if (this.#telaPausada === !!pausar) return;
+    this.#telaPausada = !!pausar;
+    await Promise.all(["screen", "screenAudio"].map((r) => applyProfile(this.tx[r]?.sender, this.#perfil(r))));
+  }
+
+  get telaPausada() {
+    return this.#telaPausada;
+  }
+
   async #setTrack(role, track, profile) {
     const sender = this.tx[role]?.sender;
     if (!sender) return;
@@ -286,7 +305,7 @@ export class Peer extends Emitter {
       maxBitrate: Math.min(maxBitrate, profile.maxBitrate),
       maxFramerate: Math.min(maxFramerate, profile.maxFramerateComBanda ?? profile.maxFramerate),
       scaleResolutionDownBy,
-      active: !this.#viaRele.has("screen"),
+      active: !this.#viaRele.has("screen") && !this.#telaPausada,
     });
   }
 
@@ -367,7 +386,8 @@ export class Peer extends Emitter {
     if (role === "cam") return this.#perfilCamera();
     const base =
       role === "mic" ? PROFILES.mic : role === "screen" ? local?.screenProfile || PROFILES.screenText : PROFILES.screenAudio;
-    return this.#viaRele.has(role) ? { ...base, active: false } : base;
+    const fora = this.#viaRele.has(role) || (this.#telaPausada && (role === "screen" || role === "screenAudio"));
+    return fora ? { ...base, active: false } : base;
   }
 
   /* ---------------------------------------------------------------- *

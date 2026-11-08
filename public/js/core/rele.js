@@ -302,6 +302,8 @@ export class Rele {
       const desejado = porDestino.get(t.para) || new Map();
       const feitos = [];
       for (const papel of t.papeis) {
+        // Tela de quem o destino não assiste (como no Discord) não é repassada.
+        if ((papel === "screen" || papel === "screenAudio") && destino.telasVistas && !destino.telasVistas.has(t.de)) continue;
         const ehVideo = PAPEIS_VIDEO.includes(papel);
         if (ehVideo && vagasVideo <= 0) continue;
         const track = origem.tx[papel]?.receiver?.track;

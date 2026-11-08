@@ -121,8 +121,8 @@
    * Sem hover eles ficariam permanentes, e três ladrilhos dariam nove
    * botões cobrindo os rostos — que é o que a tela existe para mostrar.
    * Fixar continua ao alcance por toque duplo no ladrilho, que é o gesto
-   * que as pessoas já tentam. Tela cheia não faz falta aqui: o celular
-   * já é uma tela cheia.
+   * que as pessoas já tentam. A exceção é a tela compartilhada (fim do
+   * arquivo): tela cheia e parar de assistir.
    */
   .tile__actions {
     display: none;
@@ -581,5 +581,24 @@
   *::after {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
+  }
+}
+
+/*
+ * A tela compartilhada que estou assistindo é a exceção aos botões sumidos
+ * do ladrilho: tela cheia (que gira o celular, ui/stage.js) e parar de
+ * assistir. Fixar e janela flutuante continuam fora. Vale deitado e em pé.
+ */
+@media (max-width: 560px), (max-height: 480px) and (orientation: landscape) {
+  .tile--screen:not(.is-convite) .tile__actions {
+    display: flex;
+    opacity: 1;
+  }
+  .tile--screen .tile__action:is([data-acao="pin"], [data-acao="panel-right-open"]) {
+    display: none;
+  }
+  .tile--screen .tile__action {
+    width: 40px;
+    height: 40px;
   }
 }

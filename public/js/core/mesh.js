@@ -311,8 +311,8 @@ export class Mesh extends Emitter {
      */
     peer.on("board:open", () => {
       this.emit("board-channel", { id: info.id });
-      // Quem chegou agora precisa saber que esta janela está escondida.
-      if (!this.#vendo) peer.sendBoard({ type: "ver", cam: false });
+      // Quem chegou agora precisa saber se esta janela está escondida e de quem assisto a tela.
+      peer.sendBoard(this.#ver());
       for (const m of this.#chatPendente.get(info.id) || []) peer.sendBoard(m);
       this.#chatPendente.delete(info.id);
     });
@@ -349,6 +349,7 @@ export class Mesh extends Emitter {
     this.#direta.delete(id);
     this.#repassada.delete(id);
     this.#emitida.delete(id);
+    this.assistindo.delete(id);
     for (const porAjudante of this.#repassada.values()) porAjudante.delete(id);
     for (const de of this.#repassada.keys()) for (const role of ["mic", "cam", "screen", "screenAudio"]) this.#emitirMidia(de, role);
     this.emit("peer-removed", { id });
@@ -454,8 +455,14 @@ export class Mesh extends Emitter {
       return;
     }
     // "Não estou vendo o seu vídeo": a câmera para de ser enviada a este par.
+    // "Assisto a tela destes": quem não está na lista não recebe a minha tela.
     if (msg?.type === "ver") {
-      this.peers.get(from)?.pausarCamera(msg.cam === false);
+      const peer = this.peers.get(from);
+      peer?.pausarCamera(msg.cam === false);
+      if (peer && Array.isArray(msg.telas)) {
+        peer.telasVistas = new Set(msg.telas.map(String));
+        peer.pausarTela(!peer.telasVistas.has(this.selfId));
+      }
       return;
     }
     this.emit("board", { from, op: msg, via: "p2p" });
@@ -470,7 +477,27 @@ export class Mesh extends Emitter {
   verVideo(vendo) {
     if (this.#vendo === !!vendo) return;
     this.#vendo = !!vendo;
-    for (const peer of this.peers.values()) peer.sendBoard({ type: "ver", cam: this.#vendo });
+    for (const peer of this.peers.values()) peer.sendBoard(this.#ver());
+  }
+
+  /**
+   * De quem assisto a tela. Como no Discord, ninguém assiste sem clicar:
+   * quem transmite só manda a tela para quem está aqui (peer.pausarTela).
+   */
+  assistindo = new Set();
+
+  assistirTela(id, assistir) {
+    if (this.assistindo.has(id) === !!assistir) return;
+    if (assistir) this.assistindo.add(id);
+    else {
+      this.assistindo.delete(id);
+      this.sfu.receber(id, { type: "sfu", on: false }); // sai do SFU dessa pessoa; volta no próximo anúncio se assistir de novo
+    }
+    for (const peer of this.peers.values()) peer.sendBoard(this.#ver());
+  }
+
+  #ver() {
+    return { type: "ver", cam: this.#vendo, telas: [...this.assistindo] };
   }
 
   /* ---------------------------------------------------------------- *

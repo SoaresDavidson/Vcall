@@ -2361,6 +2361,29 @@ if (process.platform === "linux") {
   ok("SFU no navegador: entra em sala de 3+, cifra ponta a ponta e troca sem deixar ninguém sem imagem");
 }
 
+/* -- Assistir só se quiser (como no Discord) e tela cheia no celular -- */
+{
+  const { readFileSync } = await import("node:fs");
+  const ler = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  // Quem não assiste não recebe: tela e som da tela desligados para ele, na malha, no relé e no SFU.
+  assert.match(ler("public/js/core/peer.js"), /this\.#telaPausada && \(role === "screen" \|\| role === "screenAudio"\)/);
+  assert.match(ler("public/js/core/mesh.js"), /peer\.pausarTela\(!peer\.telasVistas\.has\(this\.selfId\)\)/);
+  assert.match(ler("public/js/core/rele.js"), /destino\.telasVistas && !destino\.telasVistas\.has\(t\.de\)/);
+  assert.match(ler("public/js/core/sfu.js"), /!msg\.on \|\| !this\.#mesh\.assistindo\?\.has\(de\)/);
+  // O app Android só tem tela cheia sobrescrevendo onShowCustomView; o giro vem pela ponte.
+  assert.match(ler("android/app/src/main/java/com/vcall/app/MainActivity.java"), /public void onShowCustomView\(View view, CustomViewCallback cb\)/);
+  assert.match(ler("android/app/src/main/java/com/vcall/app/Ponte.java"), /public void girar\(String orientacao\)/);
+  // No telefone, a tela assistida mostra o botão de tela cheia.
+  assert.match(ler("public/css/mobile.css"), /\.tile--screen:not\(\.is-convite\) \.tile__actions \{\s*display: flex;/);
+  ok("assistir só se quiser: sem clicar em Assistir a tela não é enviada; tela cheia no celular e no app Android");
+
+  // App Android: entrar com câmera e microfone recusados não inicia o serviço em primeiro plano
+  // (iniciar e não chamar startForeground fazia o Android matar o app); a permissão que chega depois o inicia.
+  assert.match(ler("android/app/src/main/java/com/vcall/app/ChamadaService.java"), /if \(Build\.VERSION\.SDK_INT >= 29 && tipos\(c\) == 0\) return;/);
+  assert.match(ler("android/app/src/main/java/com/vcall/app/MainActivity.java"), /if \(emChamada\) ChamadaService\.iniciar\(this\);/);
+  ok("app Android: entrar sem câmera nem microfone não derruba o app");
+}
+
 console.log(`\n${passou} blocos de verificação passaram.`);
 process.exit(0);
 

@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.PictureInPictureParams;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
@@ -120,7 +121,7 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(ponte, "VcallAndroid");
 
         web.setWebViewClient(new Cliente());
-        web.setWebChromeClient(new Cromo());
+        web.setWebChromeClient(cromo = new Cromo());
         // Download de link http(s) comum: quem sabe baixar é o navegador.
         web.setDownloadListener((url, ua, disp, mime, tam) -> {
             if (url.startsWith("http")) abrirFora(Uri.parse(url));
@@ -235,6 +236,60 @@ public class MainActivity extends Activity {
         public Bitmap getDefaultVideoPoster() {
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
         }
+
+        /*
+         * Tela cheia pedida pela página (a tela compartilhada, ui/stage.js).
+         * Sem sobrescrever isto, o WebView diz que não tem tela cheia
+         * (document.fullscreenEnabled = false). A view vem por cima de tudo e
+         * sem a barra de navegação; quem gira é a página, pela Ponte.girar.
+         */
+        @Override
+        public void onShowCustomView(View view, CustomViewCallback cb) {
+            if (telaCheia != null) {
+                cb.onCustomViewHidden();
+                return;
+            }
+            telaCheia = view;
+            sairDaTelaCheia = cb;
+            raiz.addView(view, new FrameLayout.LayoutParams(-1, -1));
+            barraDeNavegacao(false);
+        }
+
+        @Override
+        public void onHideCustomView() {
+            if (telaCheia == null) return;
+            raiz.removeView(telaCheia);
+            telaCheia = null;
+            barraDeNavegacao(true);
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+            CustomViewCallback cb = sairDaTelaCheia;
+            sairDaTelaCheia = null;
+            if (cb != null) cb.onCustomViewHidden();
+        }
+    }
+
+    private View telaCheia;
+    private WebChromeClient.CustomViewCallback sairDaTelaCheia;
+    private Cromo cromo;
+
+    /** Ponte.girar: trava a orientação só durante a tela cheia; fora dela, só destrava. */
+    void girar(int orientacao) {
+        if (telaCheia != null || orientacao == ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) setRequestedOrientation(orientacao);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void barraDeNavegacao(boolean mostrar) {
+        Window w = getWindow();
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = w.getInsetsController();
+            if (c == null) return;
+            if (mostrar) c.show(WindowInsets.Type.navigationBars());
+            else c.hide(WindowInsets.Type.navigationBars());
+        } else {
+            View d = w.getDecorView();
+            int f = d.getSystemUiVisibility();
+            d.setSystemUiVisibility(mostrar ? f & ~View.SYSTEM_UI_FLAG_HIDE_NAVIGATION : f | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
     }
 
     /**
@@ -312,6 +367,9 @@ public class MainActivity extends Activity {
         PermissionRequest req = pedidoPendente;
         pedidoPendente = null;
         concederOQueDa(req);
+        // Câmera ou microfone liberados no meio da chamada: o serviço começa
+        // (entrou com as duas recusadas) ou ganha o tipo novo (startForeground de novo).
+        if (emChamada) ChamadaService.iniciar(this);
     }
 
     @Override
@@ -394,7 +452,9 @@ public class MainActivity extends Activity {
      * ------------------------------------------------------------------ */
 
     private void voltar() {
-        if (emChamada) {
+        if (telaCheia != null) {
+            cromo.onHideCustomView(); // voltar sai da tela cheia, não da chamada
+        } else if (emChamada) {
             // Voltar não derruba a chamada: ela vai para a mini-janela.
             if (!entrarNaMiniJanela()) moveTaskToBack(true);
         } else if (web.canGoBack()) {

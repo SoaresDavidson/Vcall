@@ -377,6 +377,48 @@ await passo("girar", async () => {
   await espera(2500);
 });
 
+await passo("assistir a tela", async () => {
+  // O computador transmite; o celular só recebe depois de tocar em Assistir (como no Discord).
+  await b.evaluate(() => {
+    navigator.mediaDevices.getDisplayMedia = async () => {
+      const c = document.createElement("canvas");
+      c.width = 1280;
+      c.height = 720;
+      const g = c.getContext("2d");
+      setInterval(() => {
+        g.fillStyle = "#1d2a6b";
+        g.fillRect(0, 0, 1280, 720);
+        g.fillStyle = "#fff";
+        g.font = "bold 72px sans-serif";
+        g.fillText(`Planilha ${Date.now() % 100000}`, 60, 380);
+      }, 50);
+      return c.captureStream(20);
+    };
+    return window.vcall.screen.start({ withAudio: false });
+  });
+  await a.waitForSelector(".tile__assistir", { timeout: 15000 });
+  await espera(2000);
+  const pausada = () => b.evaluate(() => [...window.vcall.mesh.peers.values()][0].tx.screen.sender.getParameters().encodings[0].active === false);
+  check("o celular vê o convite e a tela não sai do computador para ele", await pausada());
+  await a.click(".tile__assistir");
+  const chegou = await a.waitForFunction(() => document.querySelector('.tile[data-kind="screen"] video')?.videoWidth > 0, null, { timeout: 15000 }).then(() => true, () => false);
+  check("tocar em Assistir traz a tela", chegou);
+  await a.click('.tile[data-kind="screen"] [data-acao="maximize-2"]');
+  await espera(3000);
+  const cheia = await a.evaluate(() => ({ el: document.fullscreenElement?.dataset.kind || null, giro: screen.orientation.type }));
+  tela("and-tela-cheia");
+  check("tela cheia no app (onShowCustomView), deitada", cheia.el === "screen" && cheia.giro.startsWith("landscape"), JSON.stringify(cheia));
+  adb("shell input keyevent KEYCODE_BACK");
+  await espera(3000);
+  const saiu = await a.evaluate(() => ({ el: document.fullscreenElement?.dataset.kind || null, giro: screen.orientation.type }));
+  check("voltar sai da tela cheia (não da chamada) e o celular volta a ficar em pé", !saiu.el && saiu.giro.startsWith("portrait") && !naMiniJanela(), JSON.stringify(saiu));
+  await a.click('.tile[data-kind="screen"] [data-acao="eye-off"]');
+  await espera(2000);
+  check("parar de assistir: volta o convite e a tela deixa de ser enviada", (await a.locator(".tile__assistir").isVisible()) && (await pausada()));
+  await b.evaluate(() => window.vcall.screen.stop("user"));
+  await espera(1500);
+});
+
 await passo("sair pela notificação", async () => {
   adb("shell cmd statusbar expand-notifications");
   await espera(2000);

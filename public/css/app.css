@@ -3450,6 +3450,36 @@ body.is-recording .topbar::after {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Tela que eu não assisto (como no Discord): só o convite com Assistir. */
+.tile.is-convite .tile__actions,
+.tile.is-convite .tile__net,
+.tile.is-convite .vol {
+  display: none;
+}
+.tile__convite {
+  container-type: size;
+}
+.tile__convite .tile__assistir .icon {
+  color: inherit; /* o ícone de destaque do aviso sumia no fundo do botão */
+}
+.tile__convite strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Ladrilho pequeno (faixa do destaque, sala cheia): só o botão. */
+@container (max-height: 150px) {
+  .tile__convite > :not(.tile__assistir) {
+    display: none;
+  }
+}
+@container (max-width: 120px) {
+  .tile__assistir span {
+    display: none;
+  }
+}
+
 /* Botão "Enviar pelo WhatsApp" do convite: a cor que todo mundo reconhece. */
 .btn--whatsapp {
   align-self: flex-start;

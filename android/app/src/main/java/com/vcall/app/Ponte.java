@@ -3,6 +3,7 @@ package com.vcall.app;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -150,6 +151,19 @@ final class Ponte {
     @JavascriptInterface
     public void chamada(boolean ligada) {
         tela.runOnUiThread(() -> tela.chamada(ligada));
+    }
+
+    /**
+     * A tela compartilhada em tela cheia gira o celular (ui/stage.js):
+     * "paisagem", "retrato" ou "" (volta a girar livre). O WebView não tem
+     * screen.orientation.lock. Só vale durante a tela cheia (MainActivity.girar).
+     */
+    @JavascriptInterface
+    public void girar(String orientacao) {
+        int o = "paisagem".equals(orientacao) ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : "retrato".equals(orientacao) ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        tela.runOnUiThread(() -> tela.girar(o));
     }
 
     @JavascriptInterface

@@ -31,6 +31,21 @@ const CONNECTION_TEXT = {
 
 const TOQUE = typeof matchMedia === "function" && env.isTouch; // os testes carregam este módulo no Node
 
+/**
+ * Gira o celular na tela cheia ("paisagem" | "retrato") e destrava ao sair ("").
+ * O WebView do app Android não tem screen.orientation.lock: lá quem gira é o
+ * app, pela ponte (Ponte.girar).
+ */
+function girar(o) {
+  if (window.VcallAndroid?.girar) return window.VcallAndroid.girar(o);
+  try {
+    if (o) screen.orientation?.lock?.(o === "paisagem" ? "landscape" : "portrait").catch(() => {});
+    else screen.orientation?.unlock?.();
+  } catch {
+    /* navegador sem trava de orientação */
+  }
+}
+
 class Tile {
   #vezDoFundo = 0;
 
@@ -178,7 +193,7 @@ class Tile {
     const b = el("button.tile__action", {
       type: "button",
       "aria-label": label,
-      dataset: { tip: label, "tip-placement": "bottom" },
+      dataset: { tip: label, "tip-placement": "bottom", acao: iconName },
       onClick: (e) => {
         e.stopPropagation();
         onClick(b);
@@ -404,11 +419,41 @@ class Tile {
     this.presentEl = el("div.tile__present", {}, [
       icon("screen-share", { size: "xl" }),
       el("strong", { text: label }),
-      el("span", { text: "Os outros estão vendo a sua tela. A prévia fica escondida para não gerar o efeito espelho." }),
+      el("span", { text: "Quem clicar em Assistir vê a sua tela. A prévia fica escondida para não gerar o efeito espelho." }),
       ver,
     ]);
     this.video.classList.add("is-concealed");
     this.node.append(this.presentEl);
+  }
+
+  /**
+   * Como no Discord: a tela de outra pessoa que eu não estou assistindo. O
+   * ladrilho só convida; nada da tela chega até clicar em Assistir
+   * (mesh.assistirTela). `nome` vazio tira o convite.
+   */
+  setConvite(nome, onAssistir) {
+    this.convite = !!nome;
+    this.node.classList.toggle("is-convite", this.convite);
+    if (!nome) {
+      this.conviteEl?.remove();
+      this.conviteEl = null;
+      return;
+    }
+    if (document.fullscreenElement === this.node) document.exitFullscreen().catch(() => {});
+    if (this.conviteEl) return;
+    const assistir = el("button.btn.btn--primary.tile__assistir", {
+      type: "button",
+      onClick: (e) => {
+        e.stopPropagation();
+        onAssistir();
+      },
+    }, [icon("eye", { size: "sm" }), el("span", { text: "Assistir" })]);
+    this.conviteEl = el("div.tile__present.tile__convite", {}, [
+      icon("screen-share", { size: "xl" }),
+      el("strong", { text: `${nome} está transmitindo` }),
+      assistir,
+    ]);
+    this.node.append(this.conviteEl);
   }
 
   setPinned(on) {
@@ -489,6 +534,8 @@ export class Stage {
     this.floater.setAttribute("aria-label", "Seu vídeo — arraste para outro canto");
     (spotlightEl?.parentElement || root)?.append(this.floater);
     this.#wireFloater();
+    // Saiu da tela cheia (botão, voltar do Android, ladrilho que sumiu): o celular volta a girar livre.
+    if (TOQUE) document.addEventListener("fullscreenchange", () => document.fullscreenElement || girar(""));
   }
 
   /** Chamada a dois, sem tela, quadro nem fixação: modo balão. */
@@ -579,11 +626,15 @@ export class Stage {
       pressed: false,
       onClick: () => this.togglePin(id),
     });
-    tile.addAction({
-      iconName: "maximize-2",
-      label: "Tela cheia",
-      onClick: () => this.fullscreen(id),
-    });
+    // Sem tela cheia (app Android antigo, sem onShowCustomView), sem botão morto.
+    // O iPhone não põe elemento em tela cheia, só o <video> (fullscreen()).
+    if (env.canFullscreen || env.isSafari) {
+      tile.addAction({
+        iconName: "maximize-2",
+        label: "Tela cheia",
+        onClick: () => this.fullscreen(id),
+      });
+    }
 
     // Janela flutuante: o vídeo continua visível por cima de outros programas
     // enquanto a pessoa trabalha fora do navegador. O Firefox tem o recurso,
@@ -680,8 +731,14 @@ export class Stage {
     if (!tile) return;
     const node = tile.node;
     const isFull = document.fullscreenElement === node || document.webkitFullscreenElement === node;
-    if (isFull) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
-    else (node.requestFullscreen || node.webkitRequestFullscreen)?.call(node)?.catch?.(() => {});
+    if (isFull) return (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    // iPhone: o player do sistema, que já gira sozinho.
+    if (!env.canFullscreen) return tile.video.webkitEnterFullscreen?.();
+    const pedido = (node.requestFullscreen || node.webkitRequestFullscreen)?.call(node);
+    // No celular, a tela deitada gira o aparelho (como no YouTube e no Discord).
+    const v = tile.video;
+    if (TOQUE) Promise.resolve(pedido).then(() => girar(v.videoWidth >= v.videoHeight ? "paisagem" : "retrato"), () => {});
+    else pedido?.catch?.(() => {});
   }
 
   async pictureInPicture(id) {
@@ -725,9 +782,9 @@ export class Stage {
     if (this.pinnedId && this.tiles.has(this.pinnedId)) return this.pinnedId;
     if (this.layout === "grid") return null;
 
-    // Uma tela compartilhada é quase sempre o motivo da reunião.
+    // Uma tela compartilhada é quase sempre o motivo da reunião (se assistida: o convite fica na grade).
     for (const [id, tile] of this.tiles) {
-      if (tile.kind === "screen") return id;
+      if (tile.kind === "screen" && !tile.convite) return id;
     }
 
     // Com muita gente, destacar quem fala evita miniaturas ilegíveis.

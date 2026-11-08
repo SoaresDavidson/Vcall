@@ -121,7 +121,8 @@ export class SfuSala {
       this.#confirmados.set(de, papeis);
       return;
     }
-    if (!msg.on) {
+    // Quem não clicou em Assistir não entra no SFU: nada da tela chega nem é decodificado.
+    if (!msg.on || !this.#mesh.assistindo?.has(de)) {
       if (this.#sub?.de === de) this.#pararSub();
       return;
     }

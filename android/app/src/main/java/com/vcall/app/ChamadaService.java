@@ -26,7 +26,26 @@ public class ChamadaService extends Service {
     private static final String CANAL = "chamada-ativa";
     private static final int ID = 1;
 
+    /** Tipos de serviço que o Android já liberou: microfone e câmera com a permissão concedida. */
+    static int tipos(Context c) {
+        int t = 0;
+        if (c.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+            t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        if (c.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+            t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+        return t;
+    }
+
+    /**
+     * Sem câmera nem microfone liberados não há o que manter, e o serviço nem
+     * começa: iniciado por startForegroundService, ele TEM de chamar
+     * startForeground a tempo, e o stopSelf no lugar não basta — o Android
+     * matava o app (ForegroundServiceDidNotStartInTimeException) de quem
+     * entrava na chamada com as duas permissões recusadas. Se a permissão vier
+     * depois, MainActivity.onRequestPermissionsResult chama de novo.
+     */
     static void iniciar(Context c) {
+        if (Build.VERSION.SDK_INT >= 29 && tipos(c) == 0) return;
         Intent i = new Intent(c, ChamadaService.class);
         try {
             if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i);
@@ -76,12 +95,8 @@ public class ChamadaService extends Service {
 
         if (Build.VERSION.SDK_INT >= 29) {
             // Só os tipos que o Android já liberou; pedir câmera sem a permissão derruba o serviço (14+).
-            int tipos = 0;
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                tipos |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-            if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-                tipos |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
-            if (tipos == 0) {
+            int tipos = tipos(this);
+            if (tipos == 0) { // permissão retirada entre o iniciar() e aqui
                 stopSelf();
                 return START_NOT_STICKY;
             }

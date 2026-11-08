@@ -2836,6 +2836,7 @@ function wireMesh() {
     tile.setConnection("connecting");
     tile.setMic(!!state.mic);
     tile.setHand(!!state.hand);
+    syncTiles(id); // já transmitindo quando chegamos: o convite aparece sem esperar a mídia
     updateHeader();
   });
 
@@ -2871,7 +2872,19 @@ function wireMesh() {
    * regra aqui é: o ladrilho existe quando há mídia viva E a pessoa declarou
    * que está enviando aquilo.
    */
-  const remoteMedia = new Map(); // id -> { cam, screen }
+  const remoteMedia = new Map(); // id -> { cam, screen, screenAudio }
+
+  /*
+   * Como no Discord: a tela de outra pessoa aparece como convite, e só chega
+   * (e só é decodificada) depois de clicar em Assistir. Quem transmite não
+   * manda a tela para quem não assiste (mesh.assistirTela).
+   */
+  function assistir(id, sim) {
+    mesh.assistirTela(id, sim);
+    const som = remoteMedia.get(id)?.screenAudio;
+    audio.attach(id, "screenAudio", sim && som?.live ? som.stream : null);
+    syncTiles(id);
+  }
 
   function syncTiles(id) {
     const got = remoteMedia.get(id) || {};
@@ -2880,13 +2893,23 @@ function wireMesh() {
 
     stage.get(id, "cam")?.setCamera(state.cam && got.cam ? got.cam : null);
 
-    if (state.screen && got.screen) {
+    // Parou de transmitir: quem assistia volta ao convite na próxima transmissão.
+    if (!state.screen && mesh.assistindo.has(id)) {
+      mesh.assistirTela(id, false);
+      audio.attach(id, "screenAudio", null);
+    }
+
+    if (state.screen) {
+      const vendo = mesh.assistindo.has(id);
       const tile = stage.ensure(id, "screen", {
         name: `Tela de ${profile.name || "participante"}`,
         avatar: profile.avatar,
       });
       addVolumeTo(tile, id, profile.name || "participante");
-      tile.setStream(got.screen);
+      tile.botaoParar ||= tile.addAction({ iconName: "eye-off", label: "Parar de assistir", onClick: () => assistir(id, false) });
+      tile.setConvite(vendo ? "" : profile.name || "Alguém", () => assistir(id, true));
+      tile.setStream(vendo ? got.screen : null);
+      if (vendo && !got.screen) tile.node.classList.add("is-waiting"); // até a primeira imagem chegar
       tile.setQuality(mesh.stats.samples.get(id)?.quality || "unknown");
       stage.relayout();
     } else if (stage.get(id, "screen")) {
@@ -2899,12 +2922,15 @@ function wireMesh() {
     // Voz e som da tela vão para a saída de áudio. Sem esta linha a chamada
     // conecta, o vídeo aparece e não sai som nenhum.
     if (role === "mic" || role === "screenAudio") {
-      audio.attach(id, role, live ? stream : null);
+      // O som da tela só toca para quem assiste a tela (como no Discord).
+      if (role === "screenAudio") remoteMedia.set(id, { ...remoteMedia.get(id), screenAudio: { stream, live } });
+      const toca = role === "mic" || mesh.assistindo.has(id);
+      audio.attach(id, role, live && toca ? stream : null);
       // A linha de som da tela existe desde o começo da chamada e pode "acordar"
       // sem ninguém compartilhar nada (o navegador recebe silêncio). O aviso só
       // vale quando a pessoa está de fato compartilhando a tela — antes ele
       // aparecia do nada, para todo mundo.
-      if (role === "screenAudio" && live && stream && mesh.states.get(id)?.screen) {
+      if (role === "screenAudio" && live && stream && toca && mesh.states.get(id)?.screen) {
         toast(`${mesh.profiles.get(id)?.name || "Alguém"} está compartilhando o som da tela`, {
           tone: "info",
           ms: 3500,
@@ -2940,7 +2966,11 @@ function wireMesh() {
     syncTiles(id);
     if (state.screen && !wasSharing && stage.get(id, "screen")) {
       const name = mesh.profiles.get(id)?.name || "Alguém";
-      toast(`${name} está compartilhando a tela`, { tone: "info" });
+      toast(`${name} está transmitindo a tela`, {
+        tone: "info",
+        key: `tela-${id}`,
+        action: { label: "Assistir", onClick: () => mesh.states.get(id)?.screen && assistir(id, true) },
+      });
     }
   });
 

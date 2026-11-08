@@ -191,6 +191,20 @@ try {
     window.vcall.screen.emit("change", window.vcall.screen.snapshot());
   });
 
+  // Como no Discord: Bruno vê "Assistir", e a tela não sai da Alice até ele clicar.
+  await b.page.waitForSelector(".tile__assistir", { timeout: 15_000 });
+  await wait(1500);
+  const antesDeAssistir = await a.page.evaluate(() => {
+    const peer = [...window.vcall.mesh.peers.values()][0];
+    return { pausada: peer.telaPausada, ativa: peer.tx.screen.sender.getParameters().encodings?.[0]?.active };
+  });
+  check(
+    "quem não clicou em Assistir não recebe a tela (o envio fica desligado)",
+    antesDeAssistir.pausada === true && antesDeAssistir.ativa === false,
+    JSON.stringify(antesDeAssistir),
+  );
+  await b.page.click(".tile__assistir");
+
   await b.page.waitForFunction(
     () => {
       const peer = [...window.vcall.mesh.peers.values()][0];

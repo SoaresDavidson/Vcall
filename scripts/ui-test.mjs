@@ -832,11 +832,14 @@ try {
     };
     const contar = () => {
       window.__tela = { entrou: 0, saiu: 0 };
+      // Conta ladrilhos novos e os que saem da página. Mudar de lugar (convite
+      // na grade -> destaque depois de Assistir) não é sumir e voltar.
+      const vistos = new WeakSet();
       const ligar = () =>
         new MutationObserver((ms) => {
           for (const m of ms) {
-            for (const n of m.addedNodes) if (n.dataset?.kind === "screen") window.__tela.entrou++;
-            for (const n of m.removedNodes) if (n.dataset?.kind === "screen") window.__tela.saiu++;
+            for (const n of m.addedNodes) if (n.dataset?.kind === "screen" && !vistos.has(n)) vistos.add(n), window.__tela.entrou++;
+            for (const n of m.removedNodes) if (n.dataset?.kind === "screen" && !n.isConnected) window.__tela.saiu++;
           }
         }).observe(document.body, { childList: true, subtree: true });
       if (document.body) ligar();
@@ -848,6 +851,13 @@ try {
     await noDock(b);
     await conectados(b, 1);
     await a.evaluate(() => window.vcall.screen.start({ withAudio: false }));
+    // Como no Discord: o Eu vê o convite, sem imagem, e o Linux não manda a tela até ele clicar.
+    await b.waitForSelector(".tile__assistir", { timeout: 12_000 });
+    await espera(1500);
+    const semAssistir = await b.evaluate(() => !!document.querySelector('.tile[data-kind="screen"] video')?.srcObject);
+    const envioAntes = await a.evaluate(() => [...window.vcall.mesh.peers.values()][0].tx.screen.sender.getParameters().encodings[0].active);
+    check("a tela de outra pessoa chega como convite: 'Assistir', sem imagem e sem envio (como no Discord)", !semAssistir && envioAntes === false, `imagem ${semAssistir}, envio ${envioAntes}`);
+    await b.click(".tile__assistir");
     // Olha a imagem a cada meio segundo, não só no fim: a trilha recebida de
     // uma tela parada fica "muda" entre um quadro repetido e outro, e o
     // ladrilho trocava a imagem pelo avatar e voltava. Uma amostra só pegava
@@ -899,6 +909,35 @@ try {
       .then(() => true)
       .catch(() => false);
     check("voltou a olhar: a câmera volta na hora", voltou);
+
+    // Parar de assistir: volta o convite e o Linux desliga o envio da tela para o Eu.
+    await b.hover('.tile[data-kind="screen"]');
+    await b.click('.tile[data-kind="screen"] [data-acao="eye-off"]');
+    const parou = await sim(
+      a.waitForFunction(() => [...window.vcall.mesh.peers.values()][0].tx.screen.sender.getParameters().encodings[0].active === false, null, { timeout: 8000 }),
+    );
+    const convite = await b.evaluate(() => !!document.querySelector('.tile[data-kind="screen"] .tile__assistir'));
+    check("'Parar de assistir' volta ao convite e a tela deixa de ser enviada", parou && convite);
+
+    // Celular: assiste e põe a tela em tela cheia (antes o botão nem aparecia no telefone).
+    const c = await participante("Celular", sala, { viewport: { width: 390, height: 820 } });
+    await noDock(c);
+    await c.waitForSelector(".tile__assistir", { timeout: 15_000 });
+    await c.click(".tile__assistir");
+    const chegou = await sim(c.waitForFunction(() => document.querySelector('.tile[data-kind="screen"] video')?.videoWidth > 0, null, { timeout: 15_000 }));
+    const botoes = await c.evaluate(() => {
+      const visivel = (s) => {
+        const b = document.querySelector(`.tile[data-kind="screen"] ${s}`);
+        return !!b && getComputedStyle(b).display !== "none" && b.getBoundingClientRect().width > 0;
+      };
+      return { cheia: visivel('[data-acao="maximize-2"]'), parar: visivel('[data-acao="eye-off"]'), fixar: visivel('[data-acao="pin"]') };
+    });
+    check("no celular, a tela assistida mostra tela cheia e parar de assistir (sem fixar)", chegou && botoes.cheia && botoes.parar && !botoes.fixar, JSON.stringify(botoes));
+    await c.click('.tile[data-kind="screen"] [data-acao="maximize-2"]');
+    const cheia = await sim(c.waitForFunction(() => document.fullscreenElement?.dataset.kind === "screen", null, { timeout: 5000 }));
+    check("o botão põe a tela compartilhada em tela cheia no celular", cheia);
+    await c.screenshot({ path: path.join(tmp, "tela-cheia-celular.png") });
+    await c.context().close();
     await a.context().close();
     await b.context().close();
   }
