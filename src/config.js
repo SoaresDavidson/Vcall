@@ -130,12 +130,14 @@ export const config = Object.freeze({
   }),
 
   /**
-   * "Assistir junto": o Jellyfin de quem hospeda (src/jellyfin.js). A chave
+   * "Assistir junto": o Jellyfin de quem hospeda (src/cinema-jellyfin.js). A chave
    * da API fica só no servidor; sem os dois, a função fica desligada.
    */
   jellyfin: Object.freeze({
     url: process.env.JELLYFIN_URL || "",
     key: process.env.JELLYFIN_KEY || "",
+    /** Nome da única biblioteca que a sala enxerga. Vazio: todas (com aviso no log). */
+    biblioteca: (process.env.JELLYFIN_BIBLIOTECA || "").trim(),
   }),
 
   /** Em produção atrás de um proxy TLS, deixe true para exigir HTTPS nos links. */

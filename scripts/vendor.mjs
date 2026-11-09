@@ -149,6 +149,7 @@ const ICONS = [
   "radio",
   "dices",
   "clapperboard",
+  "folder",
   "pause",
   "shuffle",
   "info",

@@ -13,19 +13,19 @@
  *     pessoa clicar na página. Nenhuma das duas é a pessoa pedindo pausa.
  */
 import { el, icon } from "../lib/dom.js";
-import { Vista, abertura, botao, campo, faixa, mmss, sincronizar } from "./jogos-comum.js";
+import { Vista, abertura, botao, faixa, mmss } from "./jogos-comum.js";
+import { PainelBiblioteca } from "./cinema-biblioteca.js";
 
 /** Diferença (s) a partir da qual o player é trazido de volta ao ponto da sala. */
 const TOLERANCIA = 0.75;
 
 export class VistaCinema extends Vista {
   #p = {};
-  #itens = [];
-  #carregando = false;
-  #erroLista = "";
-  /** id do vídeo que está no player. */
-  #fonte = "";
-  #trocandoFonte = null;
+  /** @type {PainelBiblioteca|null} */
+  #biblioteca = null;
+  /** "fonte:id" do vídeo que está no player. */
+  #noPlayer = "";
+  #trocando = null;
   /** Ponto para onde ESTE código mandou o player (o `seeked` dele não é da pessoa). */
   #corrigindo = null;
   /** play() deste código em andamento: a pausa que vier junto não é da pessoa. */
@@ -44,34 +44,25 @@ export class VistaCinema extends Vista {
     const estado = el("p.cinema__estado", { role: "status" });
     const palco = el("div.cinema__palco", {}, [el("div.cinema__tela", {}, [video, entrar, vazio]), aviso, estado]);
 
-    const busca = campo({ placeholder: "Buscar na biblioteca", rotulo: "Buscar vídeos", max: 80, limpar: false, aoEnviar: (t) => this.#carregar(t) });
-    busca.addEventListener("input", () => {
-      clearTimeout(this.#p.espera);
-      this.#p.espera = setTimeout(() => this.#carregar(busca.value), 350);
-    });
-    const lista = el("ul.cinema__lista", { "aria-label": "Vídeos da biblioteca" });
-    const lado = el("aside.cinema__lado", { "aria-label": "Biblioteca de quem hospeda" }, [
-      el("h3.jogos__titulo", { text: "Biblioteca" }),
-      el("div.cinema__busca", {}, [icon("search", { size: "sm" }), busca]),
-      lista,
-    ]);
+    this.#biblioteca = new PainelBiblioteca(this.l, () => this.desenhar());
+    const lado = this.#biblioteca.raiz;
     const parar = botao("Tirar o vídeo", { icone: "x", tipo: "ghost", classe: "jogos__chip", tip: "Tira o vídeo para todos", onClick: () => this.l.fechar() });
 
     const raiz = el("div.cinema", {}, [palco, lado]);
     corpo.append(raiz);
     extra.append(parar);
-    Object.assign(this.#p, { raiz, video, entrar, vazio, aviso, estado, lista, lado, parar });
+    Object.assign(this.#p, { raiz, video, entrar, vazio, aviso, estado, parar });
 
     this.#ouvirPlayer(video);
     this.ouvir(document, "visibilitychange", () => !document.hidden && this.desenhar());
     this.ouvir(this.l, "disponivel", () => this.desenhar());
     this.aoDestruir(() => {
-      clearTimeout(this.#p.espera);
+      this.#biblioteca.destruir();
       video.pause();
       video.removeAttribute("src");
       video.load(); // solta a conexão do vídeo
     });
-    this.#carregar("");
+    this.#biblioteca.comecar();
   }
 
   /** Enquanto toca, o relógio da mesa chama `tique` para manter o ponto. */
@@ -90,15 +81,15 @@ export class VistaCinema extends Vista {
     const t = this.l.tempo();
 
     if (this.l.disponivel === false) {
-      p.raiz.dataset.estado = "sem-jellyfin";
+      p.raiz.dataset.estado = "sem-fonte";
       p.parar.hidden = true;
       faixa(p.vazio, "sem", [
         abertura({
           icone: "clapperboard",
-          titulo: "Quem hospeda ainda não ligou o Jellyfin",
+          titulo: "Quem hospeda ainda não escolheu o que mostrar",
           regras: [
-            "O Assistir junto toca vídeos da biblioteca Jellyfin do computador onde a sala está.",
-            "Quem hospeda define JELLYFIN_URL e JELLYFIN_KEY no servidor e abre a sala de novo.",
+            "O Assistir junto toca vídeos do computador onde a sala está, sem enviar nada antes.",
+            "Quem hospeda liga uma fonte no servidor: o Jellyfin (JELLYFIN_URL e JELLYFIN_KEY) e abre a sala de novo.",
           ],
         }),
       ]);
@@ -107,13 +98,13 @@ export class VistaCinema extends Vista {
 
     p.raiz.dataset.estado = item ? "com-video" : "sem-video";
     p.parar.hidden = !item;
-    this.#desenharLista(item);
+    this.#biblioteca.desenhar(item);
 
     if (!item) {
       faixa(p.vazio, "escolha", [el("p", { text: "Escolha um vídeo na biblioteca: ele abre para todos na chamada, no mesmo ponto." })]);
       p.estado.textContent = "";
       p.aviso.replaceChildren();
-      if (this.#fonte) this.#soltarFonte();
+      if (this.#noPlayer) this.#soltarVideo();
       return;
     }
     p.vazio.replaceChildren();
@@ -128,67 +119,26 @@ export class VistaCinema extends Vista {
     this.#seguirSala(item, t);
   }
 
-  /* ------------------------- a biblioteca ------------------------- */
-
-  async #carregar(busca) {
-    this.#carregando = true;
-    this.#erroLista = "";
-    this.desenhar();
-    try {
-      this.#itens = await this.l.biblioteca(busca);
-    } catch (err) {
-      this.#erroLista = err.message || "Não deu para abrir a biblioteca.";
-      this.#itens = [];
-    }
-    this.#carregando = false;
-    this.desenhar();
-  }
-
-  #desenharLista(item) {
-    const { lista } = this.#p;
-    if (this.#erroLista || (!this.#carregando && !this.#itens.length)) {
-      trocarTexto(lista, this.#erroLista || "Nenhum vídeo encontrado.");
-      return;
-    }
-    if (this.#carregando && !this.#itens.length) {
-      trocarTexto(lista, "Abrindo a biblioteca…");
-      return;
-    }
-    sincronizar(
-      lista,
-      this.#itens.map((i) => ({
-        chave: i.id,
-        sig: `${i.id}|${i.id === item?.id}`,
-        criar: () =>
-          el("li", {}, [
-            el("button.cinema__item", { type: "button", "aria-current": i.id === item?.id ? "true" : null, onClick: () => this.l.escolher(i) }, [
-              icon(i.id === item?.id ? "play" : "clapperboard", { size: "sm" }),
-              el("span.truncate", { text: i.nome }),
-              el("span.muted", { text: i.segundos ? mmss(i.segundos) : "" }),
-            ]),
-          ]),
-      })),
-    );
-  }
-
   /* ------------------- o player segue a sala ------------------- */
 
   async #seguirSala(item, t) {
     const { video } = this.#p;
-    if (this.#fonte !== item.id) {
-      if (this.#trocandoFonte === item.id) return;
-      this.#trocandoFonte = item.id;
+    const chave = `${item.fonte}:${item.id}`;
+    if (this.#noPlayer !== chave) {
+      if (this.#trocando === chave) return;
+      this.#trocando = chave;
       this.#erroVideo = "";
       this.#barrado = false;
       try {
-        const src = await this.l.enderecoDoVideo(item.id);
-        if (this.l.item()?.id !== item.id || !this.#p.raiz) return;
-        this.#fonte = item.id;
+        const src = await this.l.enderecoDoVideo(item);
+        const agora = this.l.item();
+        if (`${agora?.fonte}:${agora?.id}` !== chave || !this.#p.raiz) return;
+        this.#noPlayer = chave;
         video.src = src;
       } catch (err) {
         this.#erroVideo = err.message || "Não deu para abrir o vídeo.";
       } finally {
-        if (this.#trocandoFonte === item.id) this.#trocandoFonte = null;
+        if (this.#trocando === chave) this.#trocando = null;
       }
       return; // o `loadedmetadata` chama desenhar() de novo
     }
@@ -225,9 +175,9 @@ export class VistaCinema extends Vista {
     this.#tocar(); // dentro do clique: é o gesto que o navegador pede
   }
 
-  #soltarFonte() {
+  #soltarVideo() {
     const { video } = this.#p;
-    this.#fonte = "";
+    this.#noPlayer = "";
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -262,18 +212,14 @@ export class VistaCinema extends Vista {
       const codigo = video.error?.code;
       // 4: formato que este navegador não toca (MKV, HEVC…); o resto, rede.
       this.#erroVideo = codigo === 4 ? "Este navegador não toca o formato deste vídeo." : this.#tentativas < 3 ? "O vídeo parou de chegar. Tentando de novo…" : "O vídeo não chega do computador de quem hospeda.";
-      if (codigo !== 4 && this.#fonte && this.#tentativas < 3) {
+      const item = this.l.item();
+      if (codigo !== 4 && item && this.#noPlayer && this.#tentativas < 3) {
         this.#tentativas += 1;
-        const id = this.#fonte;
-        this.#fonte = "";
-        // Ficha vencida ou rede que piscou: pede outra ficha e retoma.
-        this.l.enderecoDoVideo(id, { nova: true }).catch(() => {});
+        this.#noPlayer = "";
+        // Ficha vencida ou rede que piscou: pede outra ficha, e o próximo desenho retoma.
+        this.l.ficha({ nova: true }).catch(() => {});
       }
       this.desenhar();
     });
   }
-}
-
-function trocarTexto(lista, texto) {
-  sincronizar(lista, [{ chave: "nada", sig: texto, criar: () => el("li.cinema__nada.muted", { text: texto }) }]);
 }

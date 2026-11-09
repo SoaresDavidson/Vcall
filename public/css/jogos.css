@@ -1789,13 +1789,16 @@
 .cinema[data-estado="com-video"] .cinema__tela {
   background: #000;
 }
+/* Fora do fluxo: um vídeo em pé (celular) não estica a tela além do palco. */
 .cinema__video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 .cinema[data-estado="sem-video"] .cinema__video,
-.cinema[data-estado="sem-jellyfin"] .cinema__video {
+.cinema[data-estado="sem-fonte"] .cinema__video {
   display: none;
 }
 .cinema__vazio {
@@ -1831,11 +1834,49 @@
   border-left: 1px solid var(--border);
   min-height: 0;
 }
-.cinema[data-estado="sem-jellyfin"] .cinema__lado {
+.cinema[data-estado="sem-fonte"] .cinema__lado {
   display: none;
 }
-.cinema[data-estado="sem-jellyfin"] {
+.cinema[data-estado="sem-fonte"] {
   grid-template-columns: minmax(0, 1fr);
+}
+.cinema__fontes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.cinema__fontes [aria-selected="true"] {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cinema__trilha {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.cinema__trilha > * + *::before {
+  content: "/";
+  margin-right: var(--sp-1);
+  color: var(--text-muted);
+}
+.cinema__migalha {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px var(--sp-1);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.cinema__migalha:hover {
+  color: inherit;
+  background: var(--surface-2);
 }
 .cinema__busca {
   display: flex;
