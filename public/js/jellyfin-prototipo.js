@@ -76,7 +76,11 @@ async function aplicar(e) {
 // Eco: o evento só vira comando se o player divergir do estado da sala.
 // (Um freio por tempo engolia o play de verdade dado logo depois de carregar.)
 player.addEventListener("play", () => ultimo && !ultimo.tocando && comando({ acao: "tocar", posicao: player.currentTime }));
-player.addEventListener("pause", () => ultimo?.tocando && !player.ended && comando({ acao: "pausar", posicao: player.currentTime }));
+// Aba escondida: o Chromium pausa sozinho vídeo sem áudio em segundo plano.
+// Essa pausa é do navegador, não da pessoa, e não pode parar a sala.
+player.addEventListener("pause", () => !document.hidden && ultimo?.tocando && !player.ended && comando({ acao: "pausar", posicao: player.currentTime }));
+// Ao voltar, alcança a sala (posição e play/pausa atuais).
+document.addEventListener("visibilitychange", () => !document.hidden && ultimo && aplicar(ultimo));
 player.addEventListener("seeked", () => ultimo && Math.abs(player.currentTime - posicaoAlvo(ultimo)) > 0.6 && comando({ acao: "buscar", posicao: player.currentTime }));
 
 $("#busca").addEventListener("submit", async (ev) => {
