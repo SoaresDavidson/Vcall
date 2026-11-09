@@ -9,7 +9,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "vendor": "node scripts/vendor.mjs",
-    "check": "node --check server.js && node scripts/features-test.mjs && node scripts/host-test.mjs && node scripts/security-test.mjs && node scripts/fixes-test.mjs && node scripts/quizzv-test.mjs && node scripts/check.mjs",
+    "check": "node --check server.js && node scripts/features-test.mjs && node scripts/host-test.mjs && node scripts/security-test.mjs && node scripts/fixes-test.mjs && node scripts/quizzv-test.mjs && node scripts/cinema-test.mjs && node scripts/cinema-pasta-test.mjs && node scripts/check.mjs",
     "test": "node scripts/check.mjs && node scripts/fixes-test.mjs && node scripts/e2e.mjs && node scripts/ui-test.mjs && node scripts/quizzv-e2e.mjs && node scripts/rele-test.mjs && node scripts/turn-test.mjs && node scripts/proxy-test.mjs",
     "doctor": "node scripts/doctor.mjs",
     "desktop": "electron desktop/main.js",

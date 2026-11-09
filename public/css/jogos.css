@@ -1762,3 +1762,288 @@
     transition: none !important;
   }
 }
+
+/* ---- Cinema (Assistir junto): ui/cinema.js ---- */
+
+.cinema {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  height: 100%;
+}
+.cinema__palco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  min-height: 0;
+}
+.cinema__tela {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.cinema[data-estado="com-video"] .cinema__tela {
+  background: #000;
+}
+/* Fora do fluxo: um vídeo em pé (celular) não estica a tela além do palco. */
+.cinema__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.cinema[data-estado="sem-video"] .cinema__video,
+.cinema[data-estado="sem-fonte"] .cinema__video {
+  display: none;
+}
+.cinema__vazio {
+  padding: var(--sp-4);
+  text-align: center;
+}
+.cinema__vazio > .jg-faixa > p {
+  max-width: 46ch;
+  color: var(--text-muted);
+}
+.cinema__vazio:empty {
+  display: none;
+}
+.cinema__entrar {
+  position: absolute;
+  inset: auto auto 50% 50%;
+  translate: -50% 50%;
+}
+.cinema__estado {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cinema__estado:empty {
+  display: none;
+}
+.cinema__lado {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+}
+.cinema[data-estado="sem-fonte"] .cinema__lado {
+  display: none;
+}
+.cinema[data-estado="sem-fonte"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cinema__fontes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.cinema__fontes [aria-selected="true"] {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cinema__trilha {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.cinema__trilha > * + *::before {
+  content: "/";
+  margin-right: var(--sp-1);
+  color: var(--text-muted);
+}
+.cinema__migalha {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px var(--sp-1);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.cinema__migalha:hover {
+  color: inherit;
+  background: var(--surface-2);
+}
+.cinema__busca {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.cinema__busca .input {
+  flex: 1;
+  min-width: 0;
+}
+.cinema__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  overflow: auto;
+  min-height: 0;
+}
+.cinema__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cinema__item:hover {
+  background: var(--surface-2);
+}
+.cinema__item[aria-current="true"] {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cinema__nada {
+  padding: var(--sp-2);
+  font-size: var(--text-sm);
+}
+/* Cartazes em duas colunas (o painel é estreito); episódios ocupam a linha toda. */
+.cinema__lista {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: var(--sp-2);
+}
+.cinema__lista > .cinema__linha,
+.cinema__lista > .cinema__nada {
+  grid-column: 1 / -1;
+}
+.cinema__cartaz-btn {
+  display: grid;
+  align-content: start;
+  height: 100%;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cinema__cartaz-btn:hover {
+  background: var(--surface-2);
+}
+.cinema__cartaz-btn[aria-current="true"] {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cinema__capa-mini {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.cinema__capa-mini img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cinema__cartaz-nome {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* Nome de arquivo sem espaço ("Gravação_de_tela_…") também quebra. */
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+  line-height: 1.25;
+}
+/* Cartaz e sinopse no palco, até alguém dar play. Deixa a barra do player livre. */
+.cinema__capa {
+  position: absolute;
+  inset: 0 0 56px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: linear-gradient(#000c, #000a);
+  color: #fff;
+  pointer-events: none;
+  overflow: hidden;
+}
+.cinema__capa[hidden] {
+  display: none;
+}
+.cinema__capa-img {
+  flex: none;
+  max-width: 40%;
+  max-height: 100%;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+.cinema__capa-texto {
+  min-width: 0;
+  max-width: 46ch;
+  max-height: 100%;
+  overflow: hidden;
+}
+.cinema__capa-texto h3 {
+  margin: 0 0 var(--sp-2);
+}
+.cinema__capa-texto p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: #fffc;
+}
+.cinema__legenda {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: flex-start;
+}
+.cinema__legenda[hidden] {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .cinema {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+  .cinema__tela {
+    aspect-ratio: 16 / 9;
+    flex: none;
+  }
+  .cinema__capa-texto p {
+    display: none; /* sem espaço para a sinopse na tela pequena */
+  }
+  .cinema__lado {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: 50vh;
+  }
+}

@@ -39,10 +39,11 @@ import {
 import { confete, mmss, porChave, selo, sincronizar } from "./jogos-comum.js";
 import { VISTAS_FESTA } from "./festa.js";
 import { VISTAS_TABULEIRO } from "./tabuleiro.js";
+import { VistaCinema } from "./cinema.js";
 import { abrirDividir, abrirGithub } from "./github.js";
 
 /** Telas dos jogos que não são de equipe: id -> classe (ui/festa.js, ui/tabuleiro.js). */
-const VISTAS = { ...VISTAS_FESTA, ...VISTAS_TABULEIRO };
+const VISTAS = { ...VISTAS_FESTA, ...VISTAS_TABULEIRO, cinema: VistaCinema };
 /** O selo de quantas pessoas, no menu. */
 const QUANTOS = { "1+": "dá para jogar sozinho", "1–2": "sozinho ou em dupla" };
 

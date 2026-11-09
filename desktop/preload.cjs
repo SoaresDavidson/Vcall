@@ -101,6 +101,16 @@ contextBridge.exposeInMainWorld("vcallDesktop", {
     if (r?.erro) throw new Error(r.erro);
     return r?.valor;
   },
+  /**
+   * A pasta de vídeos do Assistir junto: "ler", "escolher" (abre o seletor de
+   * pastas do sistema) ou "desligar". O caminho só existe aqui e nas
+   * configurações do app; a sala vê ids, nunca caminhos.
+   */
+  pasta: async (acao) => {
+    const r = await ipcRenderer.invoke("vcall:pasta", String(acao || "ler"));
+    if (r?.erro) throw new Error(r.erro);
+    return r;
+  },
   /** Diz qual fonte a próxima captura deve usar, e se leva o som do sistema. */
   escolherFonte: (id, audio) => ipcRenderer.invoke("vcall:escolher", { id: String(id || ""), audio: !!audio }),
 });

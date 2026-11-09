@@ -15,6 +15,9 @@ const int = (v, d) => {
 };
 
 export const config = Object.freeze({
+  /** Pasta de vídeos do "Assistir junto" (src/cinema-pasta.js; o app de mesa pode trocá-la). */
+  pastaVideos: process.env.PASTA_VIDEOS || "",
+
   port: int(process.env.PORT, 3000),
   /**
    * Vazio de propósito. Sem host, o Node escuta no endereço não especificado
@@ -127,6 +130,17 @@ export const config = Object.freeze({
 
     /** "all" | "relay" — force "relay" para testar TURN de verdade. */
     transportPolicy: process.env.ICE_TRANSPORT_POLICY === "relay" ? "relay" : "all",
+  }),
+
+  /**
+   * "Assistir junto": o Jellyfin de quem hospeda (src/cinema-jellyfin.js). A chave
+   * da API fica só no servidor; sem os dois, a função fica desligada.
+   */
+  jellyfin: Object.freeze({
+    url: process.env.JELLYFIN_URL || "",
+    key: process.env.JELLYFIN_KEY || "",
+    /** Nome da única biblioteca que a sala enxerga. Vazio: todas (com aviso no log). */
+    biblioteca: (process.env.JELLYFIN_BIBLIOTECA || "").trim(),
   }),
 
   /** Em produção atrás de um proxy TLS, deixe true para exigir HTTPS nos links. */
