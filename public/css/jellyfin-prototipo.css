@@ -1,0 +1,8 @@
+/* PROTÓTIPO — estilo mínimo da página public/jellyfin-prototipo.html */
+.jp { max-width: 860px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+.jp__aviso { padding: 8px 12px; border: 1px dashed currentColor; border-radius: 8px; }
+.jp__linha { display: flex; gap: 8px; }
+.jp__linha input { flex: 1; }
+.jp__itens { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.jp video { width: 100%; background: #000; border-radius: 8px; }
+.jp pre { white-space: pre-wrap; font-size: 13px; max-height: 240px; overflow: auto; }

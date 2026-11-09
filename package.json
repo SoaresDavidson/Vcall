@@ -28,7 +28,8 @@
     "test:rele": "node scripts/rele-test.mjs",
     "test:turn": "node scripts/turn-test.mjs",
     "bench:video": "node scripts/bench-video.mjs",
-    "test:desktop": "node scripts/desktop-test.mjs"
+    "test:desktop": "node scripts/desktop-test.mjs",
+    "prototipo:jellyfin": "node scripts/jellyfin-prototipo.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",

@@ -31,3 +31,4 @@ bench-fala.json
 *-privada.pem
 brag-output/
 dist-android/
+.cache-prototipo-jellyfin/
