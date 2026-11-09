@@ -113,6 +113,8 @@ try {
     if (e.rev !== ultimo?.rev) log(`estado rev ${e.rev} por ${e.por || "-"}: ${e.tocando ? "tocando" : "pausado"} em ${e.posicao.toFixed(1)}s`);
     aplicar(e);
   };
+  // Já lista a biblioteca ao abrir: busca vazia devolve tudo.
+  $("#busca").requestSubmit();
 } catch (err) {
   $("#quem").textContent = `Falhou: ${err.message}`;
 }
