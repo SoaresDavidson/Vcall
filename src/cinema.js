@@ -40,6 +40,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { fonteJellyfin } from "./cinema-jellyfin.js";
+import { fontePasta } from "./cinema-pasta.js";
 
 export const CAMINHO = "/cinema";
 const FICHA_RE = /^[A-Za-z0-9_-]{32}$/;
@@ -49,7 +50,7 @@ const VALIDADE_MS = 12 * 60 * 60 * 1000;
 const MAX_FICHAS = 2000;
 
 /** As fontes conhecidas. Só as `ligada()` aparecem para a sala. */
-const FONTES = [fonteJellyfin];
+const FONTES = [fonteJellyfin, fontePasta];
 
 /** ficha -> { sala, sessao, expira } */
 const fichas = new Map();

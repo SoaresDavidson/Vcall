@@ -33,6 +33,8 @@ import { hostControl } from "./guard.js";
 import { Tunnel } from "./tunnel.js";
 import { LinkTailscale } from "./tailscale.js";
 import { lerTurn, salvarTurn, visaoDoTurn } from "./turn.js";
+import { lerPasta, salvarPasta, visaoDaPasta } from "./pasta.js";
+import { definirPasta } from "../src/cinema-pasta.js";
 import { opcoesDoCodificador, TRIALS_WEBRTC } from "./webrtc.js";
 import { definirTurnLocal } from "../src/ice.js";
 import { definirSfu } from "../src/sfu.js";
@@ -86,6 +88,8 @@ function gravarPrefRede(pref) {
 }
 /* "Servidor TURN" das configurações (desktop/turn.js). */
 const arquivoTurn = () => path.join(app.getPath("userData"), "turn.json");
+/* "Pasta de vídeos" do Assistir junto (desktop/pasta.js). */
+const arquivoPasta = () => path.join(app.getPath("userData"), "pasta.json");
 
 /*
  * Por onde a transmissão é codificada (Configurações › Transmissão): fica em
@@ -259,6 +263,9 @@ async function subirServidor() {
   let pessoa = null;
   let abrindoTunel = null;
   definirTurnLocal(lerTurn(arquivoTurn()));
+  // Sem escolha guardada, vale o PASTA_VIDEOS do ambiente (já lido pela fonte).
+  const pastaGuardada = lerPasta(arquivoPasta());
+  if (pastaGuardada !== undefined) definirPasta(pastaGuardada);
 
   const control = hostControl({
     token: TOKEN,
@@ -829,6 +836,29 @@ ipcMain.handle("vcall:github", (e, pedido) => {
   }
   if (origem !== baseUrl) return { erro: "O GitHub só conecta na sala aberta pelo seu próprio Vcall." };
   return github.pedir(String(pedido?.acao || ""), pedido?.dados);
+});
+
+/*
+ * A pasta de vídeos do Assistir junto. Quem escolhe é a pessoa deste
+ * computador, e a pasta é lida aqui: por isso, como o GitHub, só o nosso
+ * próprio app mexe. Uma sala aberta por convite (outra origem) não vê nem
+ * troca a pasta de quem a visita.
+ */
+ipcMain.handle("vcall:pasta", async (e, acao) => {
+  let origem = "";
+  try {
+    origem = new URL(e.senderFrame?.url || "").origin;
+  } catch {
+    /* sem origem: recusa abaixo */
+  }
+  if (origem !== baseUrl) return { erro: "A pasta de vídeos só se escolhe na sala aberta pelo seu próprio Vcall." };
+  if (acao === "desligar") return salvarPasta(arquivoPasta(), "");
+  if (acao === "escolher") {
+    const r = await dialog.showOpenDialog(win, { title: "Pasta de vídeos para assistir junto", properties: ["openDirectory"] });
+    if (r.canceled || !r.filePaths[0]) return visaoDaPasta();
+    return salvarPasta(arquivoPasta(), r.filePaths[0]);
+  }
+  return visaoDaPasta();
 });
 
 ipcMain.handle("vcall:info", () => ({

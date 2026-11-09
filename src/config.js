@@ -15,6 +15,9 @@ const int = (v, d) => {
 };
 
 export const config = Object.freeze({
+  /** Pasta de vídeos do "Assistir junto" (src/cinema-pasta.js; o app de mesa pode trocá-la). */
+  pastaVideos: process.env.PASTA_VIDEOS || "",
+
   port: int(process.env.PORT, 3000),
   /**
    * Vazio de propósito. Sem host, o Node escuta no endereço não especificado
