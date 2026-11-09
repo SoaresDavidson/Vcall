@@ -12,7 +12,9 @@
  *
  * O QUE VIAJA: DUAS CHAVES NO ESTADO DOS JOGOS
  *
- *   cn/item   qual vídeo  { fonte, id, nome, seg }
+ *   cn/item   qual vídeo  { fonte, id, nome, seg, pai?, img?, sin? }
+ *             (`pai` é a temporada; `img`, se tem capa; `sin`, a sinopse que
+ *             a tela mostra antes do play)
  *   cn/tempo  como tocar  { tocando, pos, em, por }
  *
  * `em` é a hora em que `pos` valia, no relógio do SERVIDOR da sala — o mesmo
@@ -23,6 +25,16 @@
  *
  * Quem mexeu por último vence (o estado é "último a escrever", features/jogos.js):
  * qualquer um dá play, pausa ou pula, como num controle remoto compartilhado.
+ *
+ * PRÓXIMO EPISÓDIO: quando o episódio acaba, todo mundo percebe quase junto
+ * e todo mundo tentaria escrever o seguinte. Por isso `avancar` só escreve se
+ * o episódio que ACABOU ainda é o da sala: quem chega depois que outro já
+ * avançou vê o estado novo e não faz nada. Todos calculam o mesmo "próximo"
+ * (a mesma lista ordenada), então até duas escritas simultâneas dizem a mesma
+ * coisa, e ninguém pula dois episódios.
+ *
+ * LEGENDA: é de cada pessoa. A escolha fica na tela de quem escolheu e nunca
+ * entra no estado compartilhado; o que a sala compartilha é só o vídeo.
  */
 import { Emitter } from "../lib/emitter.js";
 
@@ -76,12 +88,39 @@ export class Cinema extends Emitter {
     return Math.min(t.pos + passou, fim);
   }
 
-  escolher({ fonte, id, nome, segundos }) {
+  /** `tocando`: começa a tocar para todos (o próximo episódio), em vez de esperar o play. */
+  escolher({ fonte, id, nome, segundos, pai, imagem, sinopse }, { tocando = false } = {}) {
     if (!ID_RE.test(id) || !FONTE_RE.test(fonte)) return;
+    const item = { fonte, id, nome: String(nome || "").slice(0, 200), seg: Math.max(0, Number(segundos) || 0) };
+    if (ID_RE.test(pai || "")) item.pai = pai;
+    if (imagem) item.img = true;
+    if (sinopse) item.sin = String(sinopse).slice(0, 600);
     this.estado.definir([
-      ["cn/item", { fonte, id, nome: String(nome || "").slice(0, 200), seg: Math.max(0, Number(segundos) || 0) }],
-      ["cn/tempo", { tocando: false, pos: 0, em: this.agora(), por: this.estado.eu }],
+      ["cn/item", item],
+      ["cn/tempo", { tocando, pos: 0, em: this.agora(), por: this.estado.eu }],
     ]);
+  }
+
+  /**
+   * O episódio `ja` acabou aqui. Se ele ainda é o da sala e há um seguinte na
+   * mesma temporada, o seguinte entra para todos tocando; senão só pausa no fim.
+   */
+  async avancar(ja) {
+    const sala = () => this.item() && this.item().fonte === ja.fonte && this.item().id === ja.id;
+    let proximo = null;
+    try {
+      if (ja.pai) {
+        const irmaos = (await this.biblioteca({ fonte: ja.fonte, pai: ja.pai })).filter((i) => i.tipo === "video");
+        const k = irmaos.findIndex((i) => i.id === ja.id);
+        proximo = k >= 0 ? irmaos[k + 1] || null : null;
+      }
+    } catch {
+      proximo = null; // sem lista não dá para saber o próximo: só para no fim
+    }
+    if (!sala()) return false; // outra pessoa já avançou (ou tirou o vídeo)
+    if (proximo) this.escolher(proximo, { tocando: true });
+    else this.pausar(ja.seg || this.tempo().pos);
+    return Boolean(proximo);
   }
 
   tocar(pos) {
@@ -159,6 +198,24 @@ export class Cinema extends Emitter {
   /** Endereço da capa de um item (só para itens com `imagem: true`). */
   enderecoDaImagem({ fonte, id }) {
     return this.#ficha && ID_RE.test(id) && FONTE_RE.test(fonte) ? `/cinema/${fonte}/imagem/${id}?f=${encodeURIComponent(this.#ficha)}` : "";
+  }
+
+  /** Endereço de uma legenda (WebVTT), servida pela própria sala. */
+  enderecoDaLegenda({ fonte, id }, indice) {
+    return this.#ficha && ID_RE.test(id) && FONTE_RE.test(fonte) && Number.isInteger(indice) ? `/cinema/${fonte}/legenda/${id}/${indice}?f=${encodeURIComponent(this.#ficha)}` : "";
+  }
+
+  /** As legendas de um vídeo: [{ indice, nome }]. Vazio se a fonte não tem legenda. */
+  async legendas({ fonte, id }) {
+    if (!ID_RE.test(id) || !FONTE_RE.test(fonte)) return [];
+    for (const nova of [false, true]) {
+      const f = await this.ficha({ nova });
+      const r = await this.fetch(`/cinema/${fonte}/legendas/${id}?f=${encodeURIComponent(f)}`);
+      if (r.status === 403 && !nova) continue;
+      if (!r.ok) return []; // 404: a fonte não tem legenda, ou este vídeo não tem
+      return ((await r.json()).legendas || []).filter((l) => Number.isInteger(l?.indice)).map((l) => ({ indice: l.indice, nome: String(l.nome || `Legenda ${l.indice}`) }));
+    }
+    return [];
   }
 
   #mudarDisponivel(v) {

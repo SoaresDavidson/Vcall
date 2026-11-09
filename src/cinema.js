@@ -18,15 +18,23 @@
  *
  * O QUÊ: a fonte
  *
- * Cada fonte expõe só três coisas, e o resto do serviço por trás dela não é
+ * Cada fonte expõe só estas coisas, e o resto do serviço por trás dela não é
  * alcançável daqui:
  *
- *   itens({ busca, pai })  -> [{ id, nome, tipo: "video"|"grupo", segundos?, imagem? }]
+ *   itens({ busca, pai })  -> [{ id, nome, tipo: "video"|"grupo", segundos?, imagem?,
+ *                               sinopse?, pai? }], ou null se `pai` não é dela.
  *                            "grupo" é algo que se abre (série, temporada,
  *                            pasta): o cliente pede de novo com `pai` = id.
+ *                            Num episódio, `pai` é a temporada dele.
  *   video(id, req, res)    -> responde o arquivo, com Range. Recusa (false)
  *                            o que não é dela.
  *   imagem?(id, req, res)  -> capa, se a fonte tiver.
+ *   legendas?(id)          -> [{ indice, nome }] do vídeo, ou null se não é dela.
+ *   legenda?(id, indice, req, res)
+ *                          -> a legenda em WebVTT (text/vtt).
+ *
+ * As com "?" são opcionais: a fonte que não as tem não ganha a rota, e o
+ * pedido recebe 404.
  *
  * ROTAS (todas exigem ficha, menos a que a emite)
  *
@@ -34,6 +42,8 @@
  *   GET  /cinema/<fonte>/itens?f=&busca=&pai=
  *   GET  /cinema/<fonte>/video/<id>?f=
  *   GET  /cinema/<fonte>/imagem/<id>?f=
+ *   GET  /cinema/<fonte>/legendas/<id>?f=
+ *   GET  /cinema/<fonte>/legenda/<id>/<indice>?f=
  *
  * Play, pausa e posição NÃO passam por aqui: vão pelo estado compartilhado
  * dos jogos, entre os participantes (public/js/features/cinema.js).
@@ -45,6 +55,7 @@ import { fontePasta } from "./cinema-pasta.js";
 export const CAMINHO = "/cinema";
 const FICHA_RE = /^[A-Za-z0-9_-]{32}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const INDICE_RE = /^[0-9]{1,3}$/;
 const FONTE_RE = /^[a-z]{1,24}$/;
 const VALIDADE_MS = 12 * 60 * 60 * 1000;
 const MAX_FICHAS = 2000;
@@ -126,15 +137,27 @@ export async function proxyCinema(req, res, registry) {
     if (metodo !== "GET" && metodo !== "HEAD") return res.writeHead(405, { Allow: "GET, HEAD" }).end(), true;
     if (!fichaValida(url.searchParams.get("f"), registry)) return json(res, 403, { erro: "ficha inválida" }), true;
 
-    const [nomeFonte, rota, id, ...sobra] = partes;
+    const [nomeFonte, rota, id, indice, ...sobra] = partes;
     const fonte = FONTE_RE.test(nomeFonte || "") ? fontesLigadas().find((f) => f.id === nomeFonte) : null;
-    if (!fonte || sobra.length) return json(res, 404, { erro: "rota fora da lista" }), true;
+    if (!fonte || sobra.length || (indice !== undefined && rota !== "legenda")) return json(res, 404, { erro: "rota fora da lista" }), true;
 
     if (rota === "itens" && id === undefined) {
       const busca = (url.searchParams.get("busca") || "").trim().slice(0, 80);
       const pai = url.searchParams.get("pai") || "";
       if (pai && !ID_RE.test(pai)) return json(res, 400, { erro: "pai inválido" }), true;
-      return json(res, 200, { itens: await fonte.itens({ busca, pai }) }), true;
+      const itens = await fonte.itens({ busca, pai });
+      if (!itens) return json(res, 404, { erro: "não é desta fonte" }), true;
+      return json(res, 200, { itens }), true;
+    }
+    if (rota === "legendas" && fonte.legendas && ID_RE.test(id || "")) {
+      const legendas = await fonte.legendas(id);
+      if (!legendas) return json(res, 404, { erro: "não é desta fonte" }), true;
+      return json(res, 200, { legendas }), true;
+    }
+    if (rota === "legenda" && fonte.legenda && ID_RE.test(id || "") && INDICE_RE.test(indice || "")) {
+      const atendeu = await fonte.legenda(id, indice, req, res);
+      if (!atendeu && !res.headersSent) json(res, 404, { erro: "não é desta fonte" });
+      return true;
     }
     if ((rota === "video" || (rota === "imagem" && fonte.imagem)) && ID_RE.test(id || "")) {
       const atendeu = await fonte[rota](id, req, res);
