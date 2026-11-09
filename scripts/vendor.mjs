@@ -148,6 +148,8 @@ const ICONS = [
   "hard-drive",
   "radio",
   "dices",
+  "clapperboard",
+  "pause",
   "shuffle",
   "info",
   "circle-help",

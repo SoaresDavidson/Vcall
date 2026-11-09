@@ -129,6 +129,15 @@ export const config = Object.freeze({
     transportPolicy: process.env.ICE_TRANSPORT_POLICY === "relay" ? "relay" : "all",
   }),
 
+  /**
+   * "Assistir junto": o Jellyfin de quem hospeda (src/jellyfin.js). A chave
+   * da API fica só no servidor; sem os dois, a função fica desligada.
+   */
+  jellyfin: Object.freeze({
+    url: process.env.JELLYFIN_URL || "",
+    key: process.env.JELLYFIN_KEY || "",
+  }),
+
   /** Em produção atrás de um proxy TLS, deixe true para exigir HTTPS nos links. */
   trustProxy: process.env.TRUST_PROXY === "1",
   /**

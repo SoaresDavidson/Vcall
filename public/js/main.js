@@ -47,6 +47,8 @@ import { Daily, EstadoJogos, JOGOS, Poker, Retro, comArtigo, pedacosDoEstado } f
 import { KanbanGithub } from "./features/github.js";
 import { Codigo, Desenho, DuasVerdades, Mimica, QuemSouEu, Quiz, Roda, Stop } from "./features/festa.js";
 import { Forca, Lig4, Memoria, Sorteios, Velha } from "./features/tabuleiro.js";
+import { Cinema } from "./features/cinema.js";
+import { sessionToken } from "./lib/identity.js";
 import { PainelJogos } from "./ui/jogos.js";
 import { PonteQuizzV, linkDePareamento, linkDoQuizzv, qrSvg } from "./features/quizzv.js";
 import { logoQuizzv, nomeQuizzv } from "./ui/quizzv-marca.js";
@@ -2079,6 +2081,8 @@ const jogosLogicas = {
   forca: new Forca(jogosEstado, { nome: meuNome }),
   memoria: new Memoria(jogosEstado, { nome: meuNome }),
   sorteios: new Sorteios(jogosEstado, { nome: meuNome }),
+  // O vídeo vem do Jellyfin de quem hospeda; o ponto do vídeo usa o relógio do servidor.
+  cinema: new Cinema(jogosEstado, { agora: () => signaling.agoraNoServidor(), sala: () => app.room, sessao: sessionToken }),
 };
 let jogos = null;
 /** O celular com o QuizzV como controle do Quiz (features/quizzv.js). */

@@ -19,6 +19,7 @@ import { ehDaRede } from "./rede.js";
 import { ROTA_CURTA, origemPublica, paginaDoConvite } from "./convite.js";
 import { log } from "./logger.js";
 import { proxySfuHttp } from "./sfu.js";
+import { proxyJellyfin } from "./jellyfin.js";
 
 /**
  * Raiz do projeto.
@@ -263,6 +264,8 @@ export function createHttpServer({
   const server = http.createServer(async (req, res) => {
     // A sinalização do SFU de quem transmite (só no app de mesa).
     if (proxySfuHttp(req, res)) return;
+    // O Jellyfin de quem hospeda, para o "Assistir junto" (src/jellyfin.js).
+    if (registry && (await proxyJellyfin(req, res, registry))) return;
     const SEC = headersFor(req);
     const method = req.method || "GET";
 

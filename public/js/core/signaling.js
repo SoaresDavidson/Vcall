@@ -43,6 +43,7 @@ export class Signaling extends Emitter {
 
   /** Round-trip até o servidor de sinalização, em ms (não é a latência de mídia). */
   serverRtt = null;
+  #diferencaDoServidor = 0;
 
   constructor(url = null) {
     super();
@@ -121,6 +122,14 @@ export class Signaling extends Emitter {
   }
 
   /**
+   * A hora no relógio do servidor da sala (ms), igual para todos os
+   * participantes. Sem um pong ainda, vale a hora deste computador.
+   */
+  agoraNoServidor() {
+    return Date.now() + this.#diferencaDoServidor;
+  }
+
+  /**
    * Envia; se estiver desconectado, enfileira. A fila é curta de propósito:
    * sinalização velha (uma oferta de 10 segundos atrás) é pior do que
    * sinalização nenhuma, porque reabre negociações já superadas.
@@ -182,7 +191,12 @@ export class Signaling extends Emitter {
       clearTimeout(this.#pongTimer);
       this.#pongTimer = 0;
       if (m.t === "pong") {
-        if (m.n === this.#pingSeq) this.serverRtt = Math.round(performance.now() - this.#pingSentAt);
+        if (m.n === this.#pingSeq) {
+          this.serverRtt = Math.round(performance.now() - this.#pingSentAt);
+          // O relógio do servidor é o mesmo para todos na sala; o de cada
+          // computador pode estar segundos adiantado ou atrasado.
+          if (Number.isFinite(m.at)) this.#diferencaDoServidor = m.at + this.serverRtt / 2 - Date.now();
+        }
         return;
       }
       this.emit(m.t, m);
