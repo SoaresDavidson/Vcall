@@ -72,10 +72,14 @@ async function idDaRaiz() {
   return raiz.id;
 }
 
-/** O vídeo está dentro da biblioteca permitida? */
+/**
+ * O item (vídeo, série, temporada, pasta) está dentro da biblioteca
+ * permitida? A própria biblioteca conta: é de onde a navegação parte.
+ */
 async function permitido(id) {
+  if (!ID_RE.test(id)) return false;
   const r = await idDaRaiz();
-  if (!r) return true;
+  if (!r || id === r) return true;
   if ((permitidos.get(id) || 0) > Date.now()) return true;
   const q = new URLSearchParams({ Ids: id, ParentId: r, Recursive: "true", Limit: "1" });
   const dados = await pedirJson(`/Items?${q}`);
@@ -89,31 +93,112 @@ async function permitido(id) {
 
 /* ------------------------------- a fonte ------------------------------- */
 
+// O que se abre (grupo) e o que se toca (video). Qualquer outra coisa
+// (foto, música, canal…) não aparece na sala.
+const GRUPOS = new Set(["Series", "Season", "Folder", "BoxSet", "CollectionFolder"]);
+const VIDEOS = new Set(["Movie", "Episode", "Video", "MusicVideo"]);
+const IMAGEM_RE = /^image\/(jpeg|png|webp|gif|avif)\b/i;
+
+/** Só o que a tela usa: nada cru do Jellyfin passa adiante. */
+function paraItem(i) {
+  const grupo = GRUPOS.has(i.Type);
+  if (!ID_RE.test(i.Id || "") || !(grupo || VIDEOS.has(i.Type))) return null;
+  let nome = String(i.Name || "Sem título").slice(0, 200);
+  if (i.Type === "Episode" && Number.isInteger(i.IndexNumber)) nome = `${i.IndexNumber}. ${nome}`;
+  const item = { id: i.Id, nome, tipo: grupo ? "grupo" : "video" };
+  if (!grupo) item.segundos = Math.round((i.RunTimeTicks || 0) / 1e7);
+  if (i.ImageTags?.Primary) item.imagem = true;
+  if (i.Overview) item.sinopse = String(i.Overview).slice(0, 600);
+  // De que temporada é: o cliente acha o próximo episódio listando os irmãos.
+  if (i.Type === "Episode" && ID_RE.test(i.SeasonId || i.ParentId || "")) item.pai = i.SeasonId || i.ParentId;
+  return item;
+}
+
+/** As legendas de texto de um vídeo: [{ indice, nome }] (o índice é o do Jellyfin). */
+async function legendasDe(id) {
+  const q = new URLSearchParams({ Ids: id, Fields: "MediaStreams" });
+  const dados = await pedirJson(`/Items?${q}`);
+  const fluxos = (dados.Items || []).find((i) => i.Id === id)?.MediaStreams || [];
+  return fluxos
+    .filter((f) => f.Type === "Subtitle" && f.IsTextSubtitleStream !== false && Number.isInteger(f.Index) && f.Index >= 0 && f.Index < 1000)
+    .map((f) => ({ indice: f.Index, nome: String(f.DisplayTitle || f.Language || `Legenda ${f.Index}`).slice(0, 80) }));
+}
+
 export const fonteJellyfin = {
   id: "jellyfin",
   nome: "Jellyfin",
   ligada,
 
-  async itens({ busca }) {
-    const q = new URLSearchParams({
-      IncludeItemTypes: "Movie,Episode,Video,MusicVideo",
-      Recursive: "true",
-      Limit: "40",
-      SortBy: "SortName",
-      Fields: "RunTimeTicks",
-    });
+  /** Devolve null quando `pai` é de fora da biblioteca permitida. */
+  async itens({ busca, pai }) {
     const r = await idDaRaiz();
-    if (r) q.set("ParentId", r);
-    if (busca) q.set("searchTerm", busca);
+    const q = new URLSearchParams({ Fields: "RunTimeTicks,Overview", SortBy: "SortName", Limit: "40" });
+    if (pai) {
+      if (!(await permitido(pai))) return null;
+      // Dentro de uma série ou temporada: na ordem dos números, não do alfabeto.
+      q.set("ParentId", pai);
+      q.set("SortBy", "ParentIndexNumber,IndexNumber,SortName");
+      q.set("Limit", "300");
+    } else if (busca) {
+      q.set("Recursive", "true");
+      q.set("IncludeItemTypes", "Movie,Series,Episode,Video,MusicVideo");
+      q.set("searchTerm", busca);
+      if (r) q.set("ParentId", r);
+    } else if (r) {
+      q.set("ParentId", r); // o primeiro nível: séries, filmes e pastas
+      q.set("Limit", "200");
+    } else {
+      q.set("Recursive", "true");
+      q.set("IncludeItemTypes", "Movie,Series,Video,MusicVideo");
+    }
     const dados = await pedirJson(`/Items?${q}`);
-    // Só o que a tela usa: nada cru do Jellyfin passa adiante.
-    return (dados.Items || [])
-      .filter((i) => ID_RE.test(i.Id))
-      .map((i) => ({ id: i.Id, nome: String(i.Name || "Sem título").slice(0, 200), tipo: "video", segundos: Math.round((i.RunTimeTicks || 0) / 1e7) }));
+    return (dados.Items || []).map(paraItem).filter(Boolean);
+  },
+
+  async imagem(id, req, res) {
+    if (!(await permitido(id))) return false;
+    const volta = await pedir(`/Items/${id}/Images/Primary?maxWidth=400&quality=85`);
+    const tipo = String(volta.headers["content-type"] || "");
+    if (volta.statusCode !== 200 || !IMAGEM_RE.test(tipo)) {
+      volta.resume();
+      return false;
+    }
+    res.writeHead(200, { "Content-Type": tipo, "Cache-Control": "private, max-age=600", "X-Content-Type-Options": "nosniff" });
+    if (req.method === "HEAD") {
+      volta.resume();
+      res.end();
+      return true;
+    }
+    volta.pipe(res);
+    res.on("close", () => volta.destroy());
+    return true;
+  },
+
+  /** null quando o vídeo é de fora da biblioteca permitida. */
+  async legendas(id) {
+    return (await permitido(id)) ? legendasDe(id) : null;
+  },
+
+  async legenda(id, indice, req, res) {
+    if (!(await permitido(id)) || !(await legendasDe(id)).some((l) => String(l.indice) === indice)) return false;
+    const volta = await pedir(`/Videos/${id}/${id}/Subtitles/${indice}/Stream.vtt`);
+    if (volta.statusCode !== 200) {
+      volta.resume();
+      return false;
+    }
+    res.writeHead(200, { "Content-Type": "text/vtt; charset=utf-8", "Cache-Control": "private, max-age=600", "X-Content-Type-Options": "nosniff" });
+    if (req.method === "HEAD") {
+      volta.resume();
+      res.end();
+      return true;
+    }
+    volta.pipe(res);
+    res.on("close", () => volta.destroy());
+    return true;
   },
 
   async video(id, req, res) {
-    if (!ID_RE.test(id) || !(await permitido(id))) return false;
+    if (!(await permitido(id))) return false;
     const range = req.headers.range;
     const volta = await pedir(`/Videos/${id}/stream?static=true`, { headers: range ? { Range: range } : {} });
     const passa = {};

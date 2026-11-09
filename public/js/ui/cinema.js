@@ -33,6 +33,14 @@ export class VistaCinema extends Vista {
   #barrado = false;
   #erroVideo = "";
   #tentativas = 0;
+  /** O fim do episódio está sendo tratado (evita avançar duas vezes). */
+  #avancando = false;
+  /** Legendas do vídeo atual, a escolha desta pessoa e de qual vídeo elas são. */
+  #legendas = [];
+  #legendasDe = "";
+  #legendaEscolhida = null;
+  /** O nome da última legenda escolhida: o próximo episódio já abre com ela. */
+  #nomeLegenda = "";
 
   montar() {
     const { corpo, extra } = this.c;
@@ -42,7 +50,12 @@ export class VistaCinema extends Vista {
     const vazio = el("div.cinema__vazio");
     const aviso = el("div.cinema__aviso");
     const estado = el("p.cinema__estado", { role: "status" });
-    const palco = el("div.cinema__palco", {}, [el("div.cinema__tela", {}, [video, entrar, vazio]), aviso, estado]);
+    const capa = el("div.cinema__capa");
+    capa.hidden = true;
+    const escolhaLegenda = el("select.input.jogos__select", { "aria-label": "Legenda (só para você)", onChange: () => this.#escolherLegenda(escolhaLegenda.value) });
+    const legenda = el("label.cinema__legenda", { title: "A legenda é só sua: os outros não mudam" }, [icon("captions", { size: "sm" }), escolhaLegenda]);
+    legenda.hidden = true;
+    const palco = el("div.cinema__palco", {}, [el("div.cinema__tela", {}, [video, capa, entrar, vazio]), legenda, aviso, estado]);
 
     this.#biblioteca = new PainelBiblioteca(this.l, () => this.desenhar());
     const lado = this.#biblioteca.raiz;
@@ -51,7 +64,7 @@ export class VistaCinema extends Vista {
     const raiz = el("div.cinema", {}, [palco, lado]);
     corpo.append(raiz);
     extra.append(parar);
-    Object.assign(this.#p, { raiz, video, entrar, vazio, aviso, estado, parar });
+    Object.assign(this.#p, { raiz, video, entrar, vazio, aviso, estado, parar, capa, legenda, escolhaLegenda });
 
     this.#ouvirPlayer(video);
     this.ouvir(document, "visibilitychange", () => !document.hidden && this.desenhar());
@@ -108,6 +121,8 @@ export class VistaCinema extends Vista {
       return;
     }
     p.vazio.replaceChildren();
+    this.#desenharCapa(item, t);
+    this.#legendasPara(item);
 
     const quem = this.pessoas().find((x) => x.id === t.por);
     const nome = quem ? (quem.eu ? "você" : quem.nome) : "";
@@ -117,6 +132,80 @@ export class VistaCinema extends Vista {
     else p.aviso.replaceChildren();
 
     this.#seguirSala(item, t);
+  }
+
+  /* ------------------- cartaz e sinopse, antes do play ------------------- */
+
+  /** Enquanto ninguém deu play, o palco mostra o cartaz e a sinopse. */
+  #desenharCapa(item, t) {
+    const { capa } = this.#p;
+    const mostrar = !t.tocando && t.pos === 0;
+    capa.hidden = !mostrar;
+    if (!mostrar) return;
+    const src = item.img ? this.l.enderecoDaImagem(item) : "";
+    const sig = `${item.fonte}:${item.id}|${src}`;
+    if (capa.dataset.sig === sig) return;
+    capa.dataset.sig = sig;
+    capa.replaceChildren(
+      ...[
+        src ? el("img.cinema__capa-img", { src, alt: "", decoding: "async" }) : null,
+        el("div.cinema__capa-texto", {}, [el("h3", { text: item.nome }), item.sin ? el("p", { text: item.sin }) : null]),
+      ].filter(Boolean),
+    );
+  }
+
+  /* ----------------------- legenda (só desta pessoa) ----------------------- */
+
+  /** Troca as legendas quando o vídeo muda: busca as do novo e tira o <track> do antigo. */
+  #legendasPara(item) {
+    const chave = item ? `${item.fonte}:${item.id}` : "";
+    if (this.#legendasDe === chave) return;
+    this.#legendasDe = chave;
+    this.#legendas = [];
+    this.#legendaEscolhida = null;
+    this.#mostrarLegenda();
+    this.#desenharLegendas();
+    if (!item) return;
+    this.l
+      .legendas(item)
+      .then((lista) => {
+        if (this.#legendasDe !== chave || !this.#p.raiz) return; // o vídeo já mudou
+        this.#legendas = lista;
+        const igual = lista.find((l) => l.nome === this.#nomeLegenda);
+        this.#legendaEscolhida = igual ? igual.indice : null;
+        this.#desenharLegendas();
+        this.#mostrarLegenda();
+      })
+      .catch(() => {});
+  }
+
+  #desenharLegendas() {
+    const { legenda, escolhaLegenda } = this.#p;
+    legenda.hidden = !this.#legendas.length;
+    escolhaLegenda.replaceChildren(el("option", { value: "", text: "Sem legenda" }), ...this.#legendas.map((l) => el("option", { value: String(l.indice), text: l.nome })));
+    escolhaLegenda.value = this.#legendaEscolhida === null ? "" : String(this.#legendaEscolhida);
+  }
+
+  #escolherLegenda(valor) {
+    const l = this.#legendas.find((x) => String(x.indice) === valor);
+    this.#legendaEscolhida = l ? l.indice : null;
+    this.#nomeLegenda = l ? l.nome : "";
+    this.#mostrarLegenda();
+  }
+
+  /** Põe (ou tira) o <track> no player. WebVTT, vindo da própria sala. */
+  #mostrarLegenda() {
+    const { video } = this.#p;
+    for (const t of video.querySelectorAll("track")) t.remove();
+    const item = this.l.item();
+    const l = this.#legendas.find((x) => x.indice === this.#legendaEscolhida);
+    if (!l || !item) return;
+    const src = this.l.enderecoDaLegenda(item, l.indice);
+    if (!src) return;
+    const faixa = el("track", { kind: "subtitles", label: l.nome, src, default: true });
+    faixa.addEventListener("load", () => (faixa.track.mode = "showing"));
+    video.append(faixa);
+    faixa.track.mode = "showing";
   }
 
   /* ------------------- o player segue a sala ------------------- */
@@ -205,8 +294,16 @@ export class VistaCinema extends Vista {
       this.#corrigindo = null;
       if (Math.abs(pos() - this.l.posicaoAgora()) > TOLERANCIA) this.l.irPara(pos());
     });
+    // O episódio acabou: o seguinte entra para todos (features/cinema.js cuida
+    // da corrida entre quem termina quase junto). Sem seguinte, só pausa.
     this.ouvir(video, "ended", () => {
-      if (this.l.tempo().tocando) this.l.pausar(video.duration || pos());
+      const item = this.l.item();
+      if (!item || `${item.fonte}:${item.id}` !== this.#noPlayer || !this.l.tempo().tocando || this.#avancando) return;
+      this.#avancando = true;
+      this.l
+        .avancar({ ...item, seg: Math.round(video.duration) || item.seg })
+        .catch(() => {})
+        .finally(() => (this.#avancando = false));
     });
     this.ouvir(video, "error", () => {
       const codigo = video.error?.code;

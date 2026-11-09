@@ -3,6 +3,9 @@
  * as fontes de quem hospeda (abas), a busca e a lista, com grupos que se
  * abrem (série → temporada → episódio, pasta → subpasta).
  *
+ * Grupos e filmes aparecem como cartazes, em duas colunas (o painel é
+ * estreito); episódios, como lista, com número e título.
+ *
  * Cada pessoa navega a biblioteca sozinha; só ESCOLHER um vídeo vai para a
  * sala (features/cinema.js). Por isso nada daqui entra no estado compartilhado.
  */
@@ -159,28 +162,35 @@ export class PainelBiblioteca {
       return;
     }
     const atual = (i) => i.tipo === "video" && i.fonte === item?.fonte && i.id === item?.id;
+    // Episódio (vídeo que sabe a temporada dele) vai em lista; o resto, em cartaz.
+    const episodio = (i) => i.tipo === "video" && Boolean(i.pai);
     sincronizar(
       lista,
-      this.#itens.map((i) => ({
-        chave: `${i.tipo}:${i.id}`,
-        sig: `${i.id}|${i.nome}|${atual(i)}`,
-        criar: () =>
-          el("li", {}, [
-            el(
-              "button.cinema__item",
-              {
-                type: "button",
-                "aria-current": atual(i) ? "true" : null,
-                onClick: () => (i.tipo === "grupo" ? this.#abrirGrupo(i) : this.#l.escolher(i)),
-              },
-              [
-                icon(i.tipo === "grupo" ? "folder" : atual(i) ? "play" : "clapperboard", { size: "sm" }),
-                el("span.truncate", { text: i.nome }),
-                el("span.muted", { text: i.tipo === "grupo" ? "" : i.segundos ? mmss(i.segundos) : "" }),
-              ],
-            ),
-          ]),
-      })),
+      this.#itens.map((i) => {
+        const capa = i.imagem ? this.#l.enderecoDaImagem(i) : "";
+        return {
+          chave: `${i.tipo}:${i.id}`,
+          sig: `${i.id}|${i.nome}|${atual(i)}|${capa}`,
+          criar: () => {
+            const abrir = () => (i.tipo === "grupo" ? this.#abrirGrupo(i) : this.#l.escolher(i));
+            if (episodio(i)) {
+              return el("li.cinema__linha", {}, [
+                el("button.cinema__item", { type: "button", "aria-current": atual(i) ? "true" : null, onClick: abrir }, [
+                  icon(atual(i) ? "play" : "clapperboard", { size: "sm" }),
+                  el("span.truncate", { text: i.nome }),
+                  el("span.muted", { text: i.segundos ? mmss(i.segundos) : "" }),
+                ]),
+              ]);
+            }
+            return el("li.cinema__cartaz", {}, [
+              el("button.cinema__cartaz-btn", { type: "button", title: i.nome, "aria-current": atual(i) ? "true" : null, onClick: abrir }, [
+                el("span.cinema__capa-mini", {}, [capa ? el("img", { src: capa, alt: "", loading: "lazy", decoding: "async" }) : icon(i.tipo === "grupo" ? "folder" : "clapperboard")]),
+                el("span.cinema__cartaz-nome", { text: i.nome }),
+              ]),
+            ]);
+          },
+        };
+      }),
     );
   }
 }

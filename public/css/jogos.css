@@ -1922,6 +1922,107 @@
   padding: var(--sp-2);
   font-size: var(--text-sm);
 }
+/* Cartazes em duas colunas (o painel é estreito); episódios ocupam a linha toda. */
+.cinema__lista {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: var(--sp-2);
+}
+.cinema__lista > .cinema__linha,
+.cinema__lista > .cinema__nada {
+  grid-column: 1 / -1;
+}
+.cinema__cartaz-btn {
+  display: grid;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cinema__cartaz-btn:hover {
+  background: var(--surface-2);
+}
+.cinema__cartaz-btn[aria-current="true"] {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cinema__capa-mini {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.cinema__capa-mini img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cinema__cartaz-nome {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  line-height: 1.25;
+}
+/* Cartaz e sinopse no palco, até alguém dar play. Deixa a barra do player livre. */
+.cinema__capa {
+  position: absolute;
+  inset: 0 0 56px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: linear-gradient(#000c, #000a);
+  color: #fff;
+  pointer-events: none;
+  overflow: hidden;
+}
+.cinema__capa[hidden] {
+  display: none;
+}
+.cinema__capa-img {
+  flex: none;
+  max-width: 40%;
+  max-height: 100%;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+.cinema__capa-texto {
+  min-width: 0;
+  max-width: 46ch;
+  max-height: 100%;
+  overflow: hidden;
+}
+.cinema__capa-texto h3 {
+  margin: 0 0 var(--sp-2);
+}
+.cinema__capa-texto p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: #fffc;
+}
+.cinema__legenda {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: flex-start;
+}
+.cinema__legenda[hidden] {
+  display: none;
+}
 
 @media (max-width: 760px) {
   .cinema {
@@ -1932,6 +2033,9 @@
   .cinema__tela {
     aspect-ratio: 16 / 9;
     flex: none;
+  }
+  .cinema__capa-texto p {
+    display: none; /* sem espaço para a sinopse na tela pequena */
   }
   .cinema__lado {
     border-left: 0;
