@@ -89,7 +89,7 @@ export class VistaCinema extends Vista {
           titulo: "Quem hospeda ainda não escolheu o que mostrar",
           regras: [
             "O Assistir junto toca vídeos do computador onde a sala está, sem enviar nada antes.",
-            "Quem hospeda liga uma fonte no servidor: o Jellyfin (JELLYFIN_URL e JELLYFIN_KEY) e abre a sala de novo.",
+            "Quem hospeda liga uma fonte: uma pasta de vídeos (PASTA_VIDEOS, ou Configurações › Vídeos para assistir junto no app de mesa) ou o Jellyfin (JELLYFIN_URL e JELLYFIN_KEY).",
           ],
         }),
       ]);

@@ -1601,6 +1601,44 @@ function blocoDoCodificador() {
 }
 
 /**
+ * "Vídeos para assistir junto" nas configurações (só no app de mesa): a pasta
+ * deste computador que a sala pode ver no Assistir junto. Vale na hora, sem
+ * reabrir. A sala só recebe nomes e ids, nunca o caminho.
+ */
+function blocoDaPastaDeVideos(desktop) {
+  const atual = el("div.field__hint");
+  const escolher = el("button.btn", { type: "button", text: "Escolher pasta de vídeos" });
+  const desligar = el("button.btn", { type: "button", text: "Desligar", hidden: true });
+  const bloco = el("div.stack", { "data-pasta-videos": "" }, [
+    el("div.field__hint", { text: "A sala vê os vídeos desta pasta (e das subpastas) no Assistir junto. Os arquivos só saem daqui quando alguém dá play." }),
+    atual,
+    el("div.row", { style: { gap: "var(--sp-2)" } }, [escolher, desligar]),
+  ]);
+  const pintar = (v) => {
+    atual.textContent = !v?.pasta
+      ? "Nenhuma pasta escolhida."
+      : v.existe
+        ? `Pasta atual: ${v.pasta}`
+        : `Pasta atual: ${v.pasta} (não encontrei esta pasta neste computador)`;
+    desligar.hidden = !v?.pasta;
+  };
+  const pedir = async (acao) => {
+    escolher.disabled = desligar.disabled = true;
+    try {
+      pintar(await desktop.pasta(acao));
+    } catch (err) {
+      toast(String(err?.message || "Não consegui mudar a pasta de vídeos."), { tone: "warn" });
+    } finally {
+      escolher.disabled = desligar.disabled = false;
+    }
+  };
+  escolher.addEventListener("click", () => pedir("escolher"));
+  desligar.addEventListener("click", () => pedir("desligar"));
+  pedir("ler");
+  return bloco;
+}
+
+/**
  * Testa o TURN que está valendo agora (o que o /ice entrega): pede um
  * candidato "relay" de verdade. Se ele vem, o servidor autenticou e alocou um
  * caminho de repasse — é o que uma chamada vai usar quando precisar.
@@ -3833,6 +3871,7 @@ function openSettings({ naRecepcao = false } = {}) {
   mk("audiooutput", media.devices.audiooutput, "Alto-falante");
   if (deviceRows.length) section("Dispositivos", deviceRows);
   section("Transmissão", [blocoDoCodificador()]);
+  if (window.vcallDesktop?.pasta) section("Vídeos para assistir junto", [blocoDaPastaDeVideos(window.vcallDesktop)]);
 
   /*
    * Caminho curto da recepção. Tudo daqui para baixo — sensibilidade do
