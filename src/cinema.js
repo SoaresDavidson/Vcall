@@ -131,7 +131,7 @@ export async function proxyCinema(req, res, registry) {
       if (fichas.size >= MAX_FICHAS) return json(res, 503, { erro: "fichas demais" }), true;
       const ficha = randomBytes(24).toString("base64url");
       fichas.set(ficha, { sala: String(sala), sessao: String(sessao), expira: Date.now() + VALIDADE_MS });
-      return json(res, 200, { ficha, fontes: fontesLigadas().map((f) => ({ id: f.id, nome: f.nome })) }), true;
+      return json(res, 200, { ficha, fontes: fontesLigadas().map((f) => ({ id: f.id, nome: f.nome, legendas: Boolean(f.legendas) })) }), true;
     }
 
     if (metodo !== "GET" && metodo !== "HEAD") return res.writeHead(405, { Allow: "GET, HEAD" }).end(), true;

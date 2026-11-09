@@ -158,7 +158,8 @@ async function itens({ busca = "", pai = "" } = {}) {
   let dir = raiz;
   if (pai) {
     const p = await achar(raiz, pai);
-    if (!p || p.tipo !== "grupo") return [];
+    // `pai` que não é uma pasta daqui: null, e o roteador responde 404.
+    if (!p || p.tipo !== "grupo") return null;
     dir = p.real;
   }
   return (await ler(raiz, dir)).sort(ordenar).map(publico);

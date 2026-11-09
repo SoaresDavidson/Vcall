@@ -112,11 +112,11 @@ try {
   ok("a busca é recursiva e não acha oculto nem o que está fora");
 
   /* ----------------------------- travessia ----------------------------- */
-  assert.deepEqual((await itensDe(ficha, "&pai=" + "0".repeat(32))).itens, []);
+  assert.equal((await itensDe(ficha, "&pai=" + "0".repeat(32))).status, 404);
   assert.equal((await itensDe(ficha, "&pai=../..")).status, 400);
   assert.equal((await itensDe(ficha, "&pai=%2e%2e%2f%2e%2e")).status, 400);
   const clipe = raiz.itens.find((i) => i.nome === "clipe");
-  assert.deepEqual((await itensDe(ficha, `&pai=${clipe.id}`)).itens, [], "um vídeo não é pasta");
+  assert.equal((await itensDe(ficha, `&pai=${clipe.id}`)).status, 404, "um vídeo não é pasta");
   assert.equal((await fetch(`${BASE}/cinema/pasta/video/${"1".repeat(32)}?f=${ficha}`)).status, 404);
   assert.equal((await fetch(`${BASE}/cinema/pasta/video/${serie.id}?f=${ficha}`)).status, 404, "pasta não é vídeo");
   assert.equal((await fetch(`${BASE}/cinema/pasta/video/${Buffer.from(path.join(FORA, "proibido.mp4")).toString("base64url")}?f=${ficha}`)).status, 404);
@@ -132,7 +132,7 @@ try {
   const idAtalho = createHash("sha256").update("atalho.mp4").digest("hex").slice(0, 32);
   assert.equal((await fetch(`${BASE}/cinema/pasta/video/${idAtalho}?f=${ficha}`)).status, 404);
   const idPastaFora = createHash("sha256").update("pasta-de-fora").digest("hex").slice(0, 32);
-  assert.deepEqual((await itensDe(ficha, `&pai=${idPastaFora}`)).itens, []);
+  assert.equal((await itensDe(ficha, `&pai=${idPastaFora}`)).status, 404);
   const idOculto = createHash("sha256").update(".oculto.mp4").digest("hex").slice(0, 32);
   assert.equal((await fetch(`${BASE}/cinema/pasta/video/${idOculto}?f=${ficha}`)).status, 404);
   const idTxt = createHash("sha256").update("notas.txt").digest("hex").slice(0, 32);

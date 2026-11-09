@@ -914,7 +914,7 @@ export const JOGOS = {
   poker: { nome: "Planning Poker", cat: "equipe", icone: "spade", pessoas: "2+", desc: "Estimem histórias com cartas escondidas até revelar." },
   retro: { nome: "Retrospectiva", cat: "equipe", icone: "sticky-note", pessoas: "2+", desc: "Notas em colunas, votação com pontos e plano de ação." },
   daily: { nome: "Daily", cat: "equipe", icone: "timer", pessoas: "2+", desc: "Ordem sorteada e tempo de fala para cada um." },
-  cinema: { nome: "Cinema", cat: "assistir", icone: "clapperboard", pessoas: "1+", desc: "Um vídeo da biblioteca Jellyfin de quem hospeda. Qualquer um dá play, pausa ou pula." },
+  cinema: { nome: "Cinema", cat: "assistir", icone: "clapperboard", pessoas: "1+", desc: "Vídeos do computador de quem hospeda (pasta ou Jellyfin). Qualquer um dá play, pausa ou pula." },
 };
 
 /** "o Planning Poker", "a Daily", "o Stop!"… para os avisos. */

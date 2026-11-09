@@ -160,7 +160,7 @@ try {
   assert.equal(r.status, 200);
   const { ficha, fontes } = await r.json();
   assert.match(ficha, /^[A-Za-z0-9_-]{32}$/);
-  assert.deepEqual(fontes, [{ id: "jellyfin", nome: "Jellyfin" }]);
+  assert.deepEqual(fontes, [{ id: "jellyfin", nome: "Jellyfin", legendas: true }]);
   ok("quem entrou pela sinalização recebe a ficha e a lista de fontes");
 
   assert.equal((await pedirFicha(SALA, "outrasessao00000000000001")).status, 403);
@@ -349,7 +349,7 @@ try {
   const de_novo = await entrar(SALA, HOST);
   const daSala = new Cinema(new EstadoJogos({ eu: "d" }), { ...opcoes, agora: Date.now, buscar: (u, o) => fetch(new URL(u, BASE), o) });
   const itens = await daSala.biblioteca({ fonte: "jellyfin" });
-  assert.deepEqual(daSala.fontes, [{ id: "jellyfin", nome: "Jellyfin" }]);
+  assert.deepEqual(daSala.fontes, [{ id: "jellyfin", nome: "Jellyfin", legendas: true }]);
   assert.equal(daSala.disponivel, true);
   assert.deepEqual(itens.map((i) => [i.fonte, i.id, i.tipo]), [["jellyfin", FILME, "video"], ["jellyfin", SERIE, "grupo"], ["jellyfin", CAPA_FALSA, "video"]]);
   assert.match(await daSala.enderecoDoVideo(itens[0]), new RegExp(`^/cinema/jellyfin/video/${FILME}\\?f=`));

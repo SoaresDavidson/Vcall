@@ -1934,6 +1934,8 @@
 }
 .cinema__cartaz-btn {
   display: grid;
+  align-content: start;
+  height: 100%;
   gap: var(--sp-1);
   width: 100%;
   padding: var(--sp-1);
@@ -1972,6 +1974,8 @@
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* Nome de arquivo sem espaço ("Gravação_de_tela_…") também quebra. */
+  overflow-wrap: anywhere;
   font-size: var(--text-sm);
   line-height: 1.25;
 }

@@ -163,7 +163,7 @@ export class Cinema extends Emitter {
       if (!r.ok) throw new Error(r.status === 403 ? "Você ainda não está na sala." : `O servidor recusou (${r.status}).`);
       const { ficha = "", fontes = [] } = await r.json();
       this.#ficha = ficha;
-      this.fontes = fontes.filter((f) => FONTE_RE.test(f?.id || "")).map((f) => ({ id: f.id, nome: String(f.nome || f.id) }));
+      this.fontes = fontes.filter((f) => FONTE_RE.test(f?.id || "")).map((f) => ({ id: f.id, nome: String(f.nome || f.id), legendas: f.legendas === true }));
       this.#mudarDisponivel(this.fontes.length > 0);
       return this.#ficha;
     })().finally(() => (this.#pedindoFicha = null));
@@ -208,6 +208,9 @@ export class Cinema extends Emitter {
   /** As legendas de um vídeo: [{ indice, nome }]. Vazio se a fonte não tem legenda. */
   async legendas({ fonte, id }) {
     if (!ID_RE.test(id) || !FONTE_RE.test(fonte)) return [];
+    await this.ficha();
+    // Fonte sem legendas (a pasta): nem pergunta.
+    if (!this.fontes.find((x) => x.id === fonte)?.legendas) return [];
     for (const nova of [false, true]) {
       const f = await this.ficha({ nova });
       const r = await this.fetch(`/cinema/${fonte}/legendas/${id}?f=${encodeURIComponent(f)}`);
